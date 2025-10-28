@@ -10,6 +10,8 @@
     <div class="container">
         <h1>Gemini AI Story Generator</h1>
 
+        <div id="errorDisplay" class="error-message hidden"></div> <!-- Moved error display to the top -->
+
         <div class="input-group">
             <label for="storyOutput">Story So Far (editable):</label>
             <textarea id="storyOutput" rows="20" placeholder="Start writing your story here, or leave blank and provide a prompt for the first paragraph."></textarea>
@@ -42,13 +44,12 @@
             </select>
         </div>
 
-        <div id="errorDisplay" class="error-message hidden"></div>
-
         <div class="token-display-group">
             <p><strong>Input tokens for current request:</strong> <span id="currentRequestInputTokens">0</span></p>
             <p><strong>Output tokens for current request:</strong> <span id="currentRequestOutputTokens">0</span></p>
             <p><strong>Accumulated input tokens:</strong> <span id="accumulatedInputTokens">0</span></p>
             <p><strong>Accumulated output tokens:</strong> <span id="accumulatedOutputTokens">0</span></p>
+            <p><strong>Total accumulated tokens:</strong> <span id="accumulatedTokens">0</span></p> <!-- Added missing accumulatedTokens element -->
         </div>
     </div>
 

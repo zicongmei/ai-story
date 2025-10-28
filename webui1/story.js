@@ -14,7 +14,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const currentRequestOutputTokensDisplay = document.getElementById('currentRequestOutputTokens');
     const accumulatedInputTokensDisplay = document.getElementById('accumulatedInputTokens'); // New
     const accumulatedOutputTokensDisplay = document.getElementById('accumulatedOutputTokens'); // New
-    const accumulatedTokensDisplay = document.getElementById('accumulatedTokens');
+    const accumulatedTokensDisplay = document.getElementById('accumulatedTokens'); // Corrected: Get the new element
 
     // Load accumulated tokens from localStorage, default to 0 if not found
     let totalAccumulatedInputTokens = parseInt(localStorage.getItem('geminiTotalAccumulatedInputTokens') || '0', 10);
@@ -23,8 +23,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const GEMINI_API_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models/';
 
-    const defaultSystemInstruction = 'You are a skilled story writer. Continue the story one paragraph at a time, keeping the tone consistent. Ensure the new paragraph naturally follows the existing text and incorporates the given prompt for the next part of the story.';
-
+    const defaultSystemInstruction = `You are a skilled story writer.
+Continue the story one paragraph at a time, keeping the tone consistent.
+Ensure the new paragraph naturally follows the existing text and incorporates the given prompt for the next part of the story.
+Use the same language as input or previous paragraph.`;
     // Load saved settings from localStorage
     apiKeyInput.value = localStorage.getItem('geminiApiKey') || '';
     modelSelect.value = localStorage.getItem('geminiModel') || 'gemini-2.5-flash-lite';
@@ -35,7 +37,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // Display loaded accumulated tokens
     accumulatedInputTokensDisplay.textContent = totalAccumulatedInputTokens;
     accumulatedOutputTokensDisplay.textContent = totalAccumulatedOutputTokens;
-    accumulatedTokensDisplay.textContent = totalAccumulatedTokens;
+    if (accumulatedTokensDisplay) { // Check if the element exists before trying to set textContent
+        accumulatedTokensDisplay.textContent = totalAccumulatedTokens;
+    }
 
     // Save settings to localStorage on change
     apiKeyInput.addEventListener('input', () => localStorage.setItem('geminiApiKey', apiKeyInput.value));
@@ -49,26 +53,26 @@ document.addEventListener('DOMContentLoaded', () => {
     clearAllBtn.addEventListener('click', clearAllContents);
 
     function clearAllContents() {
-        if (!confirm('Are you sure you want to clear all contents and settings? This cannot be undone.')) {
+        if (!confirm('Are you sure you want to clear all contents and settings (except API key)? This cannot be undone.')) {
             return;
         }
 
-        // Clear input fields
-        apiKeyInput.value = '';
+        // Clear input fields (except API key)
+        // apiKeyInput.value = ''; // Do NOT clear API key
         modelSelect.value = 'gemini-2.5-flash-lite'; // Reset to default model
         systemInstructionTextarea.value = defaultSystemInstruction; // Reset to default instruction
         nextParagraphPromptTextarea.value = '';
         storyOutputTextarea.value = '';
 
-        // Clear localStorage
-        localStorage.removeItem('geminiApiKey');
+        // Clear localStorage (except API key)
+        // localStorage.removeItem('geminiApiKey'); // Do NOT remove API key from localStorage
         localStorage.removeItem('geminiModel');
         localStorage.removeItem('geminiSystemInstruction');
         localStorage.removeItem('geminiNextParagraphPrompt');
         localStorage.removeItem('geminiStoryOutput'); // Clear story from storage
         localStorage.removeItem('geminiTotalAccumulatedInputTokens'); // Clear accumulated input tokens
         localStorage.removeItem('geminiTotalAccumulatedOutputTokens'); // Clear accumulated output tokens
-        localStorage.removeItem('geminiTotalAccumulatedTokens'); // Clear accumulated total tokens
+        // localStorage.removeItem('geminiTotalAccumulatedTokens'); // This is derived, no need to remove separately
 
         // New: Clear token displays
         totalAccumulatedInputTokens = 0; // Reset variable
@@ -78,7 +82,9 @@ document.addEventListener('DOMContentLoaded', () => {
         currentRequestOutputTokensDisplay.textContent = '0';
         accumulatedInputTokensDisplay.textContent = '0';
         accumulatedOutputTokensDisplay.textContent = '0';
-        accumulatedTokensDisplay.textContent = '0';
+        if (accumulatedTokensDisplay) { // Check if the element exists
+            accumulatedTokensDisplay.textContent = '0';
+        }
 
         showError(''); // Clear any displayed errors
     }
@@ -160,13 +166,14 @@ document.addEventListener('DOMContentLoaded', () => {
             // Update display of accumulated tokens
             accumulatedInputTokensDisplay.textContent = totalAccumulatedInputTokens;
             accumulatedOutputTokensDisplay.textContent = totalAccumulatedOutputTokens;
-            accumulatedTokensDisplay.textContent = totalAccumulatedTokens;
+            if (accumulatedTokensDisplay) { // Check if the element exists
+                accumulatedTokensDisplay.textContent = totalAccumulatedTokens;
+            }
 
             // Save updated accumulated tokens
             localStorage.setItem('geminiTotalAccumulatedInputTokens', totalAccumulatedInputTokens.toString());
             localStorage.setItem('geminiTotalAccumulatedOutputTokens', totalAccumulatedOutputTokens.toString());
-            localStorage.setItem('geminiTotalAccumulatedTokens', totalAccumulatedTokens.toString());
-
+            // localStorage.setItem('geminiTotalAccumulatedTokens', totalAccumulatedTokens.toString()); // Derived, no need to store
 
             if (generatedText) {
                 if (storyOutputTextarea.value.trim() === '') {

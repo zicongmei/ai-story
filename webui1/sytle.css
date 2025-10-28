@@ -28,6 +28,16 @@ h1 {
     margin-bottom: 25px;
 }
 
+.error-message { /* Moved to apply to the top */
+    color: #d9534f;
+    background-color: #f2dede;
+    border: 1px solid #ebccd1;
+    padding: 10px;
+    border-radius: 4px;
+    margin-bottom: 15px; /* Add bottom margin if it's at the top */
+    text-align: center;
+}
+
 .input-group {
     margin-bottom: 20px;
 }
@@ -101,15 +111,6 @@ button:disabled {
     color: #666;
 }
 
-.error-message {
-    color: #d9534f;
-    background-color: #f2dede;
-    border: 1px solid #ebccd1;
-    padding: 10px;
-    border-radius: 4px;
-    margin-top: 15px;
-    text-align: center;
-}
 
 /* New: Styles for token display */
 .token-display-group {
