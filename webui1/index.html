@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gemini AI Story Generator</title>
+    <link rel="stylesheet" href="sytle.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Gemini AI Story Generator</h1>
+
+        
+        <div class="input-group">
+            <label for="systemInstruction">System Instruction for Gemini:</label>
+            <textarea id="systemInstruction" rows="4" placeholder="e.g., You are a fantasy story writer. Write in a vivid and engaging style. Keep paragraphs relatively short."></textarea>
+        </div>
+
+        <div class="input-group">
+            <label for="nextParagraphPrompt">What should happen in the next paragraph?</label>
+            <textarea id="nextParagraphPrompt" rows="3" placeholder="e.g., The hero encounters a mysterious old woman who offers a cryptic warning."></textarea>
+        </div>
+
+        <div class="input-group">
+            <label for="storyOutput">Story So Far (editable):</label>
+            <textarea id="storyOutput" rows="20" placeholder="Start writing your story here, or leave blank and provide a prompt for the first paragraph."></textarea>
+        </div>
+
+        <button id="generateBtn">Generate Next Paragraph</button>
+        <button id="clearAllBtn" class="secondary-btn">Clear All Contents</button>  
+        <div id="loadingIndicator" class="hidden">Generating...</div>
+
+        <div class="input-group">
+            <label for="apiKey">Gemini API Key:</label>
+            <input id="apiKey"  placeholder="Enter your Gemini API Key">  
+        </div>
+
+        <div class="input-group">
+            <label for="modelSelect">Select Model:</label>
+            <select id="modelSelect">
+                <option value="gemini-2.5-flash-lite" selected>gemini-2.5-flash-lite</option>
+                <option value="gemini-2.5-flash">gemini-2.5-flash</option>
+                <option value="gemini-2.5-pro">gemini-2.5-pro</option>
+            </select>
+        </div>
+
+        <div id="errorDisplay" class="error-message hidden"></div>
+    </div>
+
+    <script src="story.js"></script>
+</body>
+</html>
