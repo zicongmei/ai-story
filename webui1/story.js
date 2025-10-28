@@ -5,6 +5,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const nextParagraphPromptTextarea = document.getElementById('nextParagraphPrompt');
     const storyOutputTextarea = document.getElementById('storyOutput');
     const generateBtn = document.getElementById('generateBtn');
+    const revertLastParagraphBtn = document.getElementById('revertLastParagraphBtn'); 
     const clearAllBtn = document.getElementById('clearAllBtn');
     const loadingIndicator = document.getElementById('loadingIndicator');
     const errorDisplay = document.getElementById('errorDisplay');
@@ -12,14 +13,16 @@ document.addEventListener('DOMContentLoaded', () => {
     // New: Token display elements
     const currentRequestInputTokensDisplay = document.getElementById('currentRequestInputTokens');
     const currentRequestOutputTokensDisplay = document.getElementById('currentRequestOutputTokens');
-    const accumulatedInputTokensDisplay = document.getElementById('accumulatedInputTokens'); // New
-    const accumulatedOutputTokensDisplay = document.getElementById('accumulatedOutputTokens'); // New
-    const accumulatedTokensDisplay = document.getElementById('accumulatedTokens'); // Corrected: Get the new element
+    const accumulatedInputTokensDisplay = document.getElementById('accumulatedInputTokens'); 
+    const accumulatedOutputTokensDisplay = document.getElementById('accumulatedOutputTokens'); 
+    const accumulatedTokensDisplay = document.getElementById('accumulatedTokens'); 
+
+    // No longer storing previous states for reverting, the button will directly modify the current text.
 
     // Load accumulated tokens from localStorage, default to 0 if not found
     let totalAccumulatedInputTokens = parseInt(localStorage.getItem('geminiTotalAccumulatedInputTokens') || '0', 10);
     let totalAccumulatedOutputTokens = parseInt(localStorage.getItem('geminiTotalAccumulatedOutputTokens') || '0', 10);
-    let totalAccumulatedTokens = totalAccumulatedInputTokens + totalAccumulatedOutputTokens; // Calculate from the two new variables
+    let totalAccumulatedTokens = totalAccumulatedInputTokens + totalAccumulatedOutputTokens;
 
     const GEMINI_API_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models/';
 
@@ -32,24 +35,33 @@ Use the same language as input or previous paragraph.`;
     modelSelect.value = localStorage.getItem('geminiModel') || 'gemini-2.5-flash-lite';
     systemInstructionTextarea.value = localStorage.getItem('geminiSystemInstruction') || defaultSystemInstruction;
     nextParagraphPromptTextarea.value = localStorage.getItem('geminiNextParagraphPrompt') || '';
-    storyOutputTextarea.value = localStorage.getItem('geminiStoryOutput') || ''; // Load story from localStorage
+    storyOutputTextarea.value = localStorage.getItem('geminiStoryOutput') || ''; 
     
     // Display loaded accumulated tokens
     accumulatedInputTokensDisplay.textContent = totalAccumulatedInputTokens;
     accumulatedOutputTokensDisplay.textContent = totalAccumulatedOutputTokens;
-    if (accumulatedTokensDisplay) { // Check if the element exists before trying to set textContent
+    if (accumulatedTokensDisplay) { 
         accumulatedTokensDisplay.textContent = totalAccumulatedTokens;
     }
+
+    // Initialize button state based on loaded story content.
+    revertLastParagraphBtn.disabled = !storyOutputTextarea.value.trim();
 
     // Save settings to localStorage on change
     apiKeyInput.addEventListener('input', () => localStorage.setItem('geminiApiKey', apiKeyInput.value));
     modelSelect.addEventListener('change', () => localStorage.setItem('geminiModel', modelSelect.value));
     systemInstructionTextarea.addEventListener('input', () => localStorage.setItem('geminiSystemInstruction', systemInstructionTextarea.value));
     nextParagraphPromptTextarea.addEventListener('input', () => localStorage.setItem('geminiNextParagraphPrompt', nextParagraphPromptTextarea.value));
-    storyOutputTextarea.addEventListener('input', () => localStorage.setItem('geminiStoryOutput', storyOutputTextarea.value)); // Save story on manual input
+    
+    // Save story on manual input and update button state
+    storyOutputTextarea.addEventListener('input', () => {
+        localStorage.setItem('geminiStoryOutput', storyOutputTextarea.value);
+        revertLastParagraphBtn.disabled = !storyOutputTextarea.value.trim(); // Update button state on manual edit
+    });
 
 
     generateBtn.addEventListener('click', generateParagraph);
+    revertLastParagraphBtn.addEventListener('click', removeLastParagraph); // This function will now remove the last paragraph
     clearAllBtn.addEventListener('click', clearAllContents);
 
     function clearAllContents() {
@@ -57,36 +69,62 @@ Use the same language as input or previous paragraph.`;
             return;
         }
 
-        // Clear input fields (except API key)
-        // apiKeyInput.value = ''; // Do NOT clear API key
-        modelSelect.value = 'gemini-2.5-flash-lite'; // Reset to default model
-        systemInstructionTextarea.value = defaultSystemInstruction; // Reset to default instruction
+        modelSelect.value = 'gemini-2.5-flash-lite'; 
+        systemInstructionTextarea.value = defaultSystemInstruction; 
         nextParagraphPromptTextarea.value = '';
         storyOutputTextarea.value = '';
 
+        revertLastParagraphBtn.disabled = true;
+
         // Clear localStorage (except API key)
-        // localStorage.removeItem('geminiApiKey'); // Do NOT remove API key from localStorage
         localStorage.removeItem('geminiModel');
         localStorage.removeItem('geminiSystemInstruction');
         localStorage.removeItem('geminiNextParagraphPrompt');
-        localStorage.removeItem('geminiStoryOutput'); // Clear story from storage
-        localStorage.removeItem('geminiTotalAccumulatedInputTokens'); // Clear accumulated input tokens
-        localStorage.removeItem('geminiTotalAccumulatedOutputTokens'); // Clear accumulated output tokens
-        // localStorage.removeItem('geminiTotalAccumulatedTokens'); // This is derived, no need to remove separately
+        localStorage.removeItem('geminiStoryOutput'); 
+        localStorage.removeItem('geminiTotalAccumulatedInputTokens'); 
+        localStorage.removeItem('geminiTotalAccumulatedOutputTokens'); 
 
         // New: Clear token displays
-        totalAccumulatedInputTokens = 0; // Reset variable
-        totalAccumulatedOutputTokens = 0; // Reset variable
-        totalAccumulatedTokens = 0; // Reset variable
+        totalAccumulatedInputTokens = 0; 
+        totalAccumulatedOutputTokens = 0; 
+        totalAccumulatedTokens = 0; 
         currentRequestInputTokensDisplay.textContent = '0';
         currentRequestOutputTokensDisplay.textContent = '0';
-        accumulatedInputTokensDisplay.textContent = '0';
-        accumulatedOutputTokensDisplay.textContent = '0';
-        if (accumulatedTokensDisplay) { // Check if the element exists
+        if (accumulatedInputTokensDisplay) { accumulatedInputTokensDisplay.textContent = '0'; }
+        if (accumulatedOutputTokensDisplay) { accumulatedInputTokensDisplay.textContent = '0'; }
+        if (accumulatedTokensDisplay) { 
             accumulatedTokensDisplay.textContent = '0';
         }
 
-        showError(''); // Clear any displayed errors
+        showError(''); 
+    }
+
+    // This function is now responsible for removing the last paragraph directly from the textbox.
+    function removeLastParagraph() {
+        let currentStory = storyOutputTextarea.value.trim();
+        if (!currentStory) {
+            revertLastParagraphBtn.disabled = true;
+            return;
+        }
+
+        // Split by two or more newlines to identify distinct paragraphs.
+        // Trim each part and filter out any empty strings resulting from the split.
+        let paragraphs = currentStory.split(/\n\n/).map(p => p.trim()).filter(p => p !== '');
+
+        if (paragraphs.length > 0) {
+            paragraphs.pop(); // Remove the last actual paragraph
+            storyOutputTextarea.value = paragraphs.join('\n\n');
+            localStorage.setItem('geminiStoryOutput', storyOutputTextarea.value);
+            
+            // Re-evaluate button state based on the new content
+            revertLastParagraphBtn.disabled = !storyOutputTextarea.value.trim();
+            storyOutputTextarea.scrollTop = storyOutputTextarea.scrollHeight;
+        } else {
+            // If there were no discernible paragraphs left after splitting/filtering
+            storyOutputTextarea.value = '';
+            localStorage.setItem('geminiStoryOutput', '');
+            revertLastParagraphBtn.disabled = true;
+        }
     }
 
     async function generateParagraph() {
@@ -102,12 +140,13 @@ Use the same language as input or previous paragraph.`;
         }
 
         generateBtn.disabled = true;
+        revertLastParagraphBtn.disabled = true; // Disable during generation
         loadingIndicator.classList.remove('hidden');
-        showError(''); // Clear previous errors
+        showError(''); 
 
-        currentRequestInputTokensDisplay.textContent = 'Calculating...'; // New: Indicate token calculation
-        currentRequestOutputTokensDisplay.textContent = 'Calculating...'; // New: Indicate token calculation
-
+        currentRequestInputTokensDisplay.textContent = 'Calculating...'; 
+        currentRequestOutputTokensDisplay.textContent = 'Calculating...'; 
+        
         let userPrompt = '';
         if (currentStory === '') {
             userPrompt = `Start a new story. The first paragraph should be about: ${nextParagraphPrompt}`;
@@ -124,7 +163,7 @@ Use the same language as input or previous paragraph.`;
                 temperature: 0.9,
                 topP: 1,
                 topK: 1,
-                maxOutputTokens: 500, // Adjust as needed for paragraph length
+                maxOutputTokens: 500, 
             },
         };
 
@@ -151,29 +190,24 @@ Use the same language as input or previous paragraph.`;
             const data = await response.json();
             const generatedText = data.candidates[0]?.content?.parts[0]?.text;
 
-            // New: Extract and display token usage
             const promptTokens = data.usageMetadata?.promptTokenCount || 0;
             const candidateTokens = data.usageMetadata?.candidatesTokenCount || 0; 
 
             currentRequestInputTokensDisplay.textContent = promptTokens;
             currentRequestOutputTokensDisplay.textContent = candidateTokens;
             
-            // Accumulate tokens separately
             totalAccumulatedInputTokens += promptTokens;
             totalAccumulatedOutputTokens += candidateTokens;
-            totalAccumulatedTokens = totalAccumulatedInputTokens + totalAccumulatedOutputTokens; // Recalculate total
+            totalAccumulatedTokens = totalAccumulatedInputTokens + totalAccumulatedOutputTokens; 
 
-            // Update display of accumulated tokens
             accumulatedInputTokensDisplay.textContent = totalAccumulatedInputTokens;
             accumulatedOutputTokensDisplay.textContent = totalAccumulatedOutputTokens;
-            if (accumulatedTokensDisplay) { // Check if the element exists
+            if (accumulatedTokensDisplay) { 
                 accumulatedTokensDisplay.textContent = totalAccumulatedTokens;
             }
 
-            // Save updated accumulated tokens
             localStorage.setItem('geminiTotalAccumulatedInputTokens', totalAccumulatedInputTokens.toString());
             localStorage.setItem('geminiTotalAccumulatedOutputTokens', totalAccumulatedOutputTokens.toString());
-            // localStorage.setItem('geminiTotalAccumulatedTokens', totalAccumulatedTokens.toString()); // Derived, no need to store
 
             if (generatedText) {
                 if (storyOutputTextarea.value.trim() === '') {
@@ -181,22 +215,25 @@ Use the same language as input or previous paragraph.`;
                 } else {
                     storyOutputTextarea.value += '\n\n' + generatedText.trim();
                 }
-                localStorage.setItem('geminiStoryOutput', storyOutputTextarea.value); // Save updated story to localStorage
-                // Clear the next paragraph prompt after generation
+                localStorage.setItem('geminiStoryOutput', storyOutputTextarea.value); 
+                revertLastParagraphBtn.disabled = false; // Enable button as there's now content
                 nextParagraphPromptTextarea.value = '';
-                // Scroll to the bottom of the story output
                 storyOutputTextarea.scrollTop = storyOutputTextarea.scrollHeight;
             } else {
                 showError('No content generated. The model might have been blocked due to safety concerns or returned an empty response.');
-                currentRequestInputTokensDisplay.textContent = '0'; // New: Reset token display on empty generation
-                currentRequestOutputTokensDisplay.textContent = '0'; // New: Reset token display on empty generation
+                currentRequestInputTokensDisplay.textContent = '0'; 
+                currentRequestOutputTokensDisplay.textContent = '0'; 
+                // On empty generation, the story output remains unchanged from its state before this attempt.
+                revertLastParagraphBtn.disabled = !storyOutputTextarea.value.trim(); // Re-evaluate based on current content
             }
 
         } catch (error) {
             console.error('Error calling Gemini API:', error);
             showError(`Failed to generate paragraph: ${error.message}`);
-            currentRequestInputTokensDisplay.textContent = '0'; // New: Reset token display on error
-            currentRequestOutputTokensDisplay.textContent = '0'; // New: Reset token display on error
+            currentRequestInputTokensDisplay.textContent = '0'; 
+            currentRequestOutputTokensDisplay.textContent = '0'; 
+            // On error, the story output remains unchanged from its state before this attempt.
+            revertLastParagraphBtn.disabled = !storyOutputTextarea.value.trim(); // Re-evaluate based on current content
         } finally {
             generateBtn.disabled = false;
             loadingIndicator.classList.add('hidden');
