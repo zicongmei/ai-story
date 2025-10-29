@@ -185,7 +185,7 @@ Use the same language as input or previous paragraph.`;
                 temperature: 0.9,
                 topP: 1,
                 topK: 1,
-                maxOutputTokens: 500, 
+                // maxOutputTokens: 500, 
             },
             safetySettings:[{
                 category: 'HARM_CATEGORY_HATE_SPEECH',
