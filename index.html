@@ -1,11 +1,70 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Redirecting...</title>
-    <meta http-equiv="refresh" content="0; url=webui1/index.html">
+    <title>AI Story Generator - Select WebUI</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            background-color: #f4f4f4;
+            color: #333;
+        }
+        .container {
+            background-color: #fff;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            max-width: 500px;
+            width: 90%;
+        }
+        h1 {
+            color: #0056b3;
+            margin-bottom: 30px;
+        }
+        .button-group {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            margin-top: 30px;
+        }
+        .redirect-button {
+            display: block;
+            width: 100%;
+            padding: 15px 25px;
+            background-color: #007bff;
+            color: white;
+            text-decoration: none;
+            border: none;
+            border-radius: 5px;
+            font-size: 1.2rem;
+            cursor: pointer;
+            transition: background-color 0.3s ease, transform 0.2s ease;
+        }
+        .redirect-button:hover {
+            background-color: #0056b3;
+            transform: translateY(-2px);
+        }
+        .redirect-button:active {
+            transform: translateY(0);
+        }
+    </style>
 </head>
 <body>
-    <h1>Redirecting to the Web Interface...</h1>
-    <p>If the page does not automatically redirect, <a href="webui1/index.html">click here</a>.</p>
+    <div class="container">
+        <h1>Welcome to AI Story Generator</h1>
+        <p>Please select which WebUI you would like to use:</p>
+        <div class="button-group">
+            <a href="webui1/index.html" class="redirect-button">Ad free Story Generator</a>
+            <a href="webui1/index_ad.html" class="redirect-button">Story Generator with ad</a>
+        </div>
+    </div>
 </body>
 </html>
