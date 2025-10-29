@@ -9,6 +9,7 @@ body {
     align-items: flex-start; /* Align to the top */
     min-height: 100vh;
     box-sizing: border-box;
+    padding-bottom: 70px; /* Add padding to body to prevent fixed debug button from overlapping main content */
 }
 
 .container {
@@ -128,4 +129,114 @@ button:disabled {
 
 .token-display-group strong {
     color: #333;
+}
+
+/* Debug Button */
+.debug-toggle-btn {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    padding: 8px 15px;
+    background-color: #f0ad4e; /* Warning-like color */
+    color: white;
+    border: none;
+    border-radius: 50px; /* Pill shape */
+    font-size: 0.9em;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+    z-index: 1001; /* Above other content */
+    /* Overrides for general button styles */
+    display: inline-block;
+    width: auto;
+    margin: 0;
+}
+
+.debug-toggle-btn:hover {
+    background-color: #ec971f;
+}
+
+/* Debug Panel */
+.debug-panel {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    max-height: 50vh; /* Max height for the console */
+    background-color: #282c34; /* Dark background */
+    color: #abb2bf; /* Light text color */
+    border-top: 1px solid #61afef; /* Accent border */
+    box-shadow: 0 -2px 10px rgba(0,0,0,0.3);
+    z-index: 1000;
+    font-family: 'Fira Code', 'Cascadia Code', 'JetBrains Mono', 'Courier New', monospace;
+    font-size: 0.85em;
+    display: flex; /* Use flexbox for header and content */
+    flex-direction: column;
+}
+
+.debug-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 15px;
+    background-color: #21252b; /* Slightly darker header */
+    border-bottom: 1px solid #3e4451;
+}
+
+.debug-header h3 {
+    margin: 0;
+    color: #e06c75; /* Reddish color for title */
+    font-size: 1.1em;
+}
+
+.debug-clear-btn {
+    /* Overrides for general button styles */
+    display: inline-block;
+    width: auto;
+    margin: 0;
+    
+    padding: 5px 10px;
+    font-size: 0.8em;
+    background-color: #e06c75; /* Red for clear */
+    border-radius: 4px; /* Standard button shape for clear */
+}
+
+.debug-clear-btn:hover {
+    background-color: #be5046;
+}
+
+.debug-logs-content {
+    flex-grow: 1; /* Allows content to take available height */
+    overflow-y: auto; /* Scrollable content area */
+    padding: 10px 15px;
+}
+
+.debug-log-entry {
+    background-color: #323842; /* Slightly lighter background for each entry */
+    border-radius: 5px;
+    padding: 10px;
+    margin-bottom: 10px;
+    border: 1px solid #3e4451;
+}
+
+.debug-log-entry details {
+    margin-bottom: 5px;
+    cursor: pointer;
+}
+
+.debug-log-entry summary {
+    font-weight: bold;
+    color: #61afef; /* Blueish for summary */
+    padding: 5px 0;
+    outline: none; /* Remove default focus outline */
+}
+
+.debug-log-entry pre {
+    background-color: #21252b;
+    padding: 10px;
+    border-radius: 3px;
+    overflow-x: auto; /* Horizontal scroll for code */
+    white-space: pre-wrap; /* Wrap long lines */
+    word-break: break-all; /* Break words if necessary */
+    color: #abb2bf;
+    font-size: 0.9em;
 }

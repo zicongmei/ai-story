@@ -10,14 +10,21 @@ document.addEventListener('DOMContentLoaded', () => {
     const loadingIndicator = document.getElementById('loadingIndicator');
     const errorDisplay = document.getElementById('errorDisplay');
 
-    // New: Token display elements
+    // Token display elements
     const currentRequestInputTokensDisplay = document.getElementById('currentRequestInputTokens');
     const currentRequestOutputTokensDisplay = document.getElementById('currentRequestOutputTokens');
     const accumulatedInputTokensDisplay = document.getElementById('accumulatedInputTokens'); 
     const accumulatedOutputTokensDisplay = document.getElementById('accumulatedOutputTokens'); 
     const accumulatedTokensDisplay = document.getElementById('accumulatedTokens'); 
 
-    // No longer storing previous states for reverting, the button will directly modify the current text.
+    // Debug elements
+    const debugToggleBtn = document.getElementById('debugToggleBtn');
+    const debugPanel = document.getElementById('debugPanel');
+    const debugLogsContainer = document.getElementById('debugLogs');
+    const clearDebugLogsBtn = document.getElementById('clearDebugLogsBtn');
+
+    // Global array to store request/response pairs for debugging
+    const geminiLogs = [];
 
     // Load accumulated tokens from localStorage, default to 0 if not found
     let totalAccumulatedInputTokens = parseInt(localStorage.getItem('geminiTotalAccumulatedInputTokens') || '0', 10);
@@ -64,6 +71,21 @@ Use the same language as input or previous paragraph.`;
     revertLastParagraphBtn.addEventListener('click', removeLastParagraph); // This function will now remove the last paragraph
     clearAllBtn.addEventListener('click', clearAllContents);
 
+    // Debug panel event listeners
+    debugToggleBtn.addEventListener('click', () => {
+        debugPanel.classList.toggle('hidden');
+        if (!debugPanel.classList.contains('hidden')) {
+            debugLogsContainer.scrollTop = debugLogsContainer.scrollHeight; // Scroll to bottom on open
+        }
+    });
+
+    clearDebugLogsBtn.addEventListener('click', () => {
+        if (confirm('Are you sure you want to clear all debug logs?')) {
+            geminiLogs.length = 0; // Clear the array
+            debugLogsContainer.innerHTML = ''; // Clear the display
+        }
+    });
+
     function clearAllContents() {
         if (!confirm('Are you sure you want to clear all contents and settings (except API key)? This cannot be undone.')) {
             return;
@@ -84,7 +106,7 @@ Use the same language as input or previous paragraph.`;
         localStorage.removeItem('geminiTotalAccumulatedInputTokens'); 
         localStorage.removeItem('geminiTotalAccumulatedOutputTokens'); 
 
-        // New: Clear token displays
+        // Clear token displays
         totalAccumulatedInputTokens = 0; 
         totalAccumulatedOutputTokens = 0; 
         totalAccumulatedTokens = 0; 
@@ -165,6 +187,22 @@ Use the same language as input or previous paragraph.`;
                 topK: 1,
                 maxOutputTokens: 500, 
             },
+            safetySettings:[{
+                category: 'HARM_CATEGORY_HATE_SPEECH',
+                threshold: 'OFF',
+            }, {
+                category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
+                threshold: 'OFF',
+            }, {
+                category: 'HARM_CATEGORY_DANGEROUS_CONTENT',
+                threshold: 'OFF',
+            }, {
+                category: 'HARM_CATEGORY_HARASSMENT',
+                threshold: 'OFF',
+            }, {
+                category: 'HARM_CATEGORY_CIVIC_INTEGRITY',
+                threshold: 'OFF',
+            }],
         };
 
         if (systemInstruction) {
@@ -173,21 +211,26 @@ Use the same language as input or previous paragraph.`;
             };
         }
 
+        const requestBodyString = JSON.stringify(requestBody); // Store stringified version for debug log
+
         try {
             const response = await fetch(`${GEMINI_API_BASE_URL}${selectedModel}:generateContent?key=${apiKey}`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify(requestBody),
+                body: requestBodyString,
             });
 
             if (!response.ok) {
                 const errorData = await response.json();
+                appendDebugLog(requestBodyString, errorData); // Log error response
                 throw new Error(errorData.error ? errorData.error.message : response.statusText);
             }
 
             const data = await response.json();
+            appendDebugLog(requestBodyString, data); // Log successful response
+
             const generatedText = data.candidates[0]?.content?.parts[0]?.text;
 
             const promptTokens = data.usageMetadata?.promptTokenCount || 0;
@@ -230,6 +273,11 @@ Use the same language as input or previous paragraph.`;
         } catch (error) {
             console.error('Error calling Gemini API:', error);
             showError(`Failed to generate paragraph: ${error.message}`);
+            // If the error occurred before the response could be parsed, log the error object itself.
+            // If it was already logged as `errorData` above, this might be a duplicate or more specific.
+            if (!error.isLoggedAsResponse) { // Prevent double logging if it was a bad response from API
+                appendDebugLog(requestBodyString, error);
+            }
             currentRequestInputTokensDisplay.textContent = '0'; 
             currentRequestOutputTokensDisplay.textContent = '0'; 
             // On error, the story output remains unchanged from its state before this attempt.
@@ -238,6 +286,47 @@ Use the same language as input or previous paragraph.`;
             generateBtn.disabled = false;
             loadingIndicator.classList.add('hidden');
         }
+    }
+
+    // Function to append a new log entry
+    function appendDebugLog(requestBodyString, responseOrError) {
+        geminiLogs.push({
+            timestamp: new Date().toLocaleString(),
+            request: JSON.parse(requestBodyString), // Parse back to object for display
+            response: responseOrError
+        });
+        renderDebugLogs();
+    }
+
+    // Function to render all logs in the debug panel
+    function renderDebugLogs() {
+        debugLogsContainer.innerHTML = ''; // Clear previous logs
+        geminiLogs.forEach((log, index) => {
+            const logEntryDiv = document.createElement('div');
+            logEntryDiv.classList.add('debug-log-entry');
+
+            // Request summary
+            const requestSummary = document.createElement('details');
+            requestSummary.innerHTML = `<summary><strong>Request #${index + 1}</strong> (${log.timestamp})</summary>`;
+            const requestPre = document.createElement('pre');
+            requestPre.textContent = JSON.stringify(log.request, null, 2);
+            requestSummary.appendChild(requestPre);
+            logEntryDiv.appendChild(requestSummary);
+
+            // Response summary
+            const responseSummary = document.createElement('details');
+            const responseData = log.response instanceof Error ? 
+                                 { error: log.response.message, stack: log.response.stack } : 
+                                 log.response;
+            responseSummary.innerHTML = `<summary><strong>Response #${index + 1}</strong></summary>`;
+            const responsePre = document.createElement('pre');
+            responsePre.textContent = JSON.stringify(responseData, null, 2);
+            responseSummary.appendChild(responsePre);
+            logEntryDiv.appendChild(responseSummary);
+
+            debugLogsContainer.appendChild(logEntryDiv);
+        });
+        debugLogsContainer.scrollTop = debugLogsContainer.scrollHeight; // Scroll to bottom
     }
 
     function showError(message) {
