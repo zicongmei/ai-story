@@ -69,6 +69,29 @@ textarea {
     min-height: 300px; /* Make story box taller */
 }
 
+/* New: Styles for the nextParagraphPrompt input group */
+.next-paragraph-input-controls {
+    display: flex;
+    gap: 10px; /* Space between textarea and button */
+    align-items: flex-start; /* Align items to the top */
+}
+
+.next-paragraph-input-controls textarea {
+    flex-grow: 1; /* Allow textarea to take available space */
+    width: auto; /* Override generic textarea width */
+}
+
+.clear-prompt-btn {
+    /* Make the clear button smaller and specific to its context */
+    flex-shrink: 0; /* Prevent button from shrinking */
+    width: auto; /* Allow button to size naturally based on content */
+    padding: 8px 15px; /* Smaller padding than main buttons */
+    font-size: 0.9rem;
+    margin-top: 0; /* Override general button margin-top */
+    align-self: flex-start; /* Align button to the top of its flex container */
+}
+
+
 button {
     display: block;
     width: 100%;

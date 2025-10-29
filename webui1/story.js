@@ -9,6 +9,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const clearAllBtn = document.getElementById('clearAllBtn');
     const loadingIndicator = document.getElementById('loadingIndicator');
     const errorDisplay = document.getElementById('errorDisplay');
+    const clearNextParagraphPromptBtn = document.getElementById('clearNextParagraphPromptBtn'); // New: Reference to the clear prompt button
 
     // Token display elements
     const currentRequestInputTokensDisplay = document.getElementById('currentRequestInputTokens');
@@ -66,6 +67,11 @@ Use the same language as input or previous paragraph.`;
         revertLastParagraphBtn.disabled = !storyOutputTextarea.value.trim(); // Update button state on manual edit
     });
 
+    // New: Event listener for clearing nextParagraphPrompt
+    clearNextParagraphPromptBtn.addEventListener('click', () => {
+        nextParagraphPromptTextarea.value = '';
+        localStorage.removeItem('geminiNextParagraphPrompt'); // Also clear from local storage
+    });
 
     generateBtn.addEventListener('click', generateParagraph);
     revertLastParagraphBtn.addEventListener('click', removeLastParagraph); // This function will now remove the last paragraph
@@ -93,7 +99,7 @@ Use the same language as input or previous paragraph.`;
 
         modelSelect.value = 'gemini-2.5-flash-lite'; 
         systemInstructionTextarea.value = defaultSystemInstruction; 
-        nextParagraphPromptTextarea.value = '';
+        nextParagraphPromptTextarea.value = ''; // Clear next paragraph prompt as well
         storyOutputTextarea.value = '';
 
         revertLastParagraphBtn.disabled = true;
@@ -260,7 +266,7 @@ Use the same language as input or previous paragraph.`;
                 }
                 localStorage.setItem('geminiStoryOutput', storyOutputTextarea.value); 
                 revertLastParagraphBtn.disabled = false; // Enable button as there's now content
-                nextParagraphPromptTextarea.value = '';
+                // nextParagraphPromptTextarea.value = ''; // Removed as per request: do not clear nextParagraphPrompt
                 storyOutputTextarea.scrollTop = storyOutputTextarea.scrollHeight;
             } else {
                 showError('No content generated. The model might have been blocked due to safety concerns or returned an empty response.');

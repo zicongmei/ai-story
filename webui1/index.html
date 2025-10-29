@@ -18,7 +18,10 @@
         </div>
         <div class="input-group">
             <label for="nextParagraphPrompt">What should happen in the next paragraph?</label>
-            <textarea id="nextParagraphPrompt" rows="3" placeholder="e.g., The hero encounters a mysterious old woman who offers a cryptic warning."></textarea>
+            <div class="next-paragraph-input-controls">
+                <textarea id="nextParagraphPrompt" rows="3" placeholder="e.g., The hero encounters a mysterious old woman who offers a cryptic warning."></textarea>
+                <button id="clearNextParagraphPromptBtn" type="button" class="secondary-btn clear-prompt-btn">Clear</button>
+            </div>
         </div>
         
         <button id="generateBtn">Generate Next Paragraph</button>
