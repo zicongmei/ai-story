@@ -5,6 +5,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const nextParagraphPromptTextarea = document.getElementById('nextParagraphPrompt');
     const storyOutputTextarea = document.getElementById('storyOutput');
     const generateBtn = document.getElementById('generateBtn');
+    const stopBtn = document.getElementById('stopBtn'); // Reference to the stop button
     const revertLastParagraphBtn = document.getElementById('revertLastParagraphBtn'); 
     const clearAllBtn = document.getElementById('clearAllBtn');
     const loadingIndicator = document.getElementById('loadingIndicator');
@@ -26,6 +27,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Global array to store request/response pairs for debugging
     const geminiLogs = [];
+
+    // Global AbortController for stopping fetch requests
+    let abortController = null;
 
     // Load accumulated tokens from localStorage, default to 0 if not found
     let totalAccumulatedInputTokens = parseInt(localStorage.getItem('geminiTotalAccumulatedInputTokens') || '0', 10);
@@ -76,6 +80,21 @@ Use the same language as input or previous paragraph.`;
     generateBtn.addEventListener('click', generateParagraph);
     revertLastParagraphBtn.addEventListener('click', removeLastParagraph); // This function will now remove the last paragraph
     clearAllBtn.addEventListener('click', clearAllContents);
+
+    // Stop button event listener
+    stopBtn.addEventListener('click', () => {
+        if (abortController) {
+            abortController.abort(); // Signal to abort the fetch request
+            showError('Generation stopped by user.'); // Inform the user
+            // Immediately update UI to reflect stopping
+            generateBtn.disabled = false;
+            generateBtn.classList.remove('hidden');
+            stopBtn.classList.add('hidden');
+            loadingIndicator.classList.add('hidden');
+            abortController = null; // Clear the controller
+            revertLastParagraphBtn.disabled = !storyOutputTextarea.value.trim(); // Re-evaluate based on current content
+        }
+    });
 
     // Debug panel event listeners
     debugToggleBtn.addEventListener('click', () => {
@@ -166,8 +185,18 @@ Use the same language as input or previous paragraph.`;
             showError('Please enter your Gemini API Key.');
             return;
         }
+        
+        if (abortController) { // Prevent starting a new generation if one is already active
+            showError('Another generation is already in progress. Please wait or stop it first.');
+            return;
+        }
+
+        abortController = new AbortController(); // Initialize AbortController for this request
+        const signal = abortController.signal;
 
         generateBtn.disabled = true;
+        generateBtn.classList.add('hidden'); // Hide generate button
+        stopBtn.classList.remove('hidden'); // Show stop button
         revertLastParagraphBtn.disabled = true; // Disable during generation
         loadingIndicator.classList.remove('hidden');
         showError(''); 
@@ -226,6 +255,7 @@ Use the same language as input or previous paragraph.`;
                     'Content-Type': 'application/json',
                 },
                 body: requestBodyString,
+                signal: signal, // Pass the AbortController's signal here
             });
 
             if (!response.ok) {
@@ -265,32 +295,33 @@ Use the same language as input or previous paragraph.`;
                     storyOutputTextarea.value += '\n\n' + generatedText.trim();
                 }
                 localStorage.setItem('geminiStoryOutput', storyOutputTextarea.value); 
-                revertLastParagraphBtn.disabled = false; // Enable button as there's now content
                 // nextParagraphPromptTextarea.value = ''; // Removed as per request: do not clear nextParagraphPrompt
                 storyOutputTextarea.scrollTop = storyOutputTextarea.scrollHeight;
             } else {
                 showError('No content generated. The model might have been blocked due to safety concerns or returned an empty response.');
                 currentRequestInputTokensDisplay.textContent = '0'; 
                 currentRequestOutputTokensDisplay.textContent = '0'; 
-                // On empty generation, the story output remains unchanged from its state before this attempt.
-                revertLastParagraphBtn.disabled = !storyOutputTextarea.value.trim(); // Re-evaluate based on current content
             }
 
         } catch (error) {
             console.error('Error calling Gemini API:', error);
-            showError(`Failed to generate paragraph: ${error.message}`);
-            // If the error occurred before the response could be parsed, log the error object itself.
-            // If it was already logged as `errorData` above, this might be a duplicate or more specific.
-            if (!error.isLoggedAsResponse) { // Prevent double logging if it was a bad response from API
-                appendDebugLog(requestBodyString, error);
+            if (error.name === 'AbortError') {
+                showError('Generation stopped by user.');
+            } else {
+                showError(`Failed to generate paragraph: ${error.message}`);
+                if (!error.isLoggedAsResponse) {
+                    appendDebugLog(requestBodyString, error);
+                }
             }
             currentRequestInputTokensDisplay.textContent = '0'; 
             currentRequestOutputTokensDisplay.textContent = '0'; 
-            // On error, the story output remains unchanged from its state before this attempt.
-            revertLastParagraphBtn.disabled = !storyOutputTextarea.value.trim(); // Re-evaluate based on current content
         } finally {
             generateBtn.disabled = false;
+            generateBtn.classList.remove('hidden'); // Show generate button
+            stopBtn.classList.add('hidden'); // Hide stop button
             loadingIndicator.classList.add('hidden');
+            abortController = null; // Clear the controller
+            revertLastParagraphBtn.disabled = !storyOutputTextarea.value.trim(); // Re-evaluate based on current content
         }
     }
 
