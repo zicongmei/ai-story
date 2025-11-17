@@ -1,16 +1,17 @@
 # AI Story Abstract Generator
 
-This Go program provides a command-line interface to interact with the Google Gemini API, primarily for generating story abstracts and, in the future, full stories.
+This Go program provides a command-line interface to interact with the Google Gemini API, primarily for generating story abstracts and full stories.
 
 ## Features
 
-*   **Subcommand-based CLI:** Uses `abstract` subcommand to generate story plans and a `story` subcommand for future full story generation.
-*   **Flexible Gemini API Configuration:** API key can be provided via a JSON configuration file (if `--config` is used with the `abstract` subcommand) or the `GEMINI_API_KEY` environment variable. Model name can be specified in the config file or defaults to `gemini-pro`.
+*   **Subcommand-based CLI:** Uses `abstract` subcommand to generate story plans and a `story` subcommand for full story generation.
+*   **Flexible Gemini API Configuration:** API key can be provided via a JSON configuration file (if `--config` is used) or the `GEMINI_API_KEY` environment variable. Model name can be specified in the config file or defaults to `gemini-pro`.
 *   **Output Language Control:** Specify the desired language for the generated abstract using the `--language` flag.
 *   **Chapter Count Control:** Specify the desired number of chapters using the `--chapters` flag for the abstract.
-*   **Default Settings:** Sensible defaults for output file name (`abstract-yyyy-mm-dd-hh-mm-ss.txt`). No default configuration file is assumed; if `--config` is not used, environment variables are checked.
+*   **Story Generation from Abstract:** The `story` subcommand takes an abstract and generates the full text, chapter by chapter, adhering to a specified word count per chapter, **sending the entire abstract to the AI as context for each chapter generation**. Each generated chapter is immediately appended to the output file.
+*   **Default Settings:** Sensible defaults for output file name (`abstract-yyyy-mm-dd-hh-mm-ss.txt` or `fulltext-yyyy-mm-dd-hh-mm-ss.txt`). No default configuration file is assumed; if `--config` is not used, environment variables are checked.
 *   **Flexible Input:** Takes story instructions as an *optional* command-line argument for the `abstract` subcommand.
-*   **Persistent Output:** Saves the generated abstract to a specified (or default) text file.
+*   **Persistent Output:** Saves the generated abstract or full story to a specified (or default) text file.
 
 ## Installation
 
@@ -19,8 +20,12 @@ This Go program provides a command-line interface to interact with the Google Ge
 2.  **Clone the repository (or create the file structure):**
     ```bash
     mkdir -p /usr/local/google/home/zicong/code/src/github.com/zicongmei/ai-story/fullText1/pkg/abstract
+    mkdir -p /usr/local/google/home/zicong/code/src/github.com/zicongmei/ai-story/fullText1/pkg/story
+    mkdir -p /usr/local/google/home/zicong/code/src/github.com/zicongmei/ai-story/fullText1/pkg/utils
     # Place main.go in /usr/local/google/home/zicong/code/src/github.com/zicongmei/ai-story/fullText1/
-    # Place createAbstract.go (now renamed conceptually to abstract.go but keeping original filename) in /usr/local/google/home/zicong/code/src/github.com/zicongmei/ai-story/fullText1/pkg/abstract/
+    # Place createAbstract.go in /usr/local/google/home/zicong/code/src/github.com/zicongmei/ai-story/fullText1/pkg/abstract/
+    # Place story.go in /usr/local/google/home/zicong/code/src/github.com/zicongmei/ai-story/fullText1/pkg/story/
+    # Place gemini.go in /usr/local/google/home/zicong/code/src/github.com/zicongmei/ai-story/fullText1/pkg/utils/
     ```
 
 3.  **Install the Google Generative AI Go library:**
@@ -33,14 +38,14 @@ This Go program provides a command-line interface to interact with the Google Ge
 ## Configuration
 
 The Gemini API configuration is now flexible and optional.
-If the `--config` flag is provided with the `abstract` subcommand, the program attempts to load the Gemini configuration from that file. If `--config` is omitted, or if the specified config file is not found, unreadable, or doesn't contain an API key, the program falls back to using the `GEMINI_API_KEY` environment variable.
+If the `--config` flag is provided with either the `abstract` or `story` subcommand, the program attempts to load the Gemini configuration from that file. If `--config` is omitted, or if the specified config file is not found, unreadable, or doesn't contain an API key, the program falls back to using the `GEMINI_API_KEY` environment variable.
 
-### API Key Precedence (for `abstract` subcommand):
+### API Key Precedence (for all subcommands):
 1.  `api_key` from the specified JSON configuration file (if `--config` is used).
 2.  `GEMINI_API_KEY` environment variable.
 If neither is found, the program will exit with an error.
 
-### Model Name Precedence (for `abstract` subcommand):
+### Model Name Precedence (for all subcommands):
 1.  `model_name` from the specified JSON configuration file (if `--config` is used).
 2.  If `model_name` is omitted from the config file, or if no config file is used, it defaults to `gemini-pro`.
 
@@ -60,15 +65,15 @@ You can create a custom JSON file to store your API key and model name.
     *   **`api_key`**: Replace `YOUR_GEMINI_API_KEY` with your actual Google Gemini API key. You can obtain one from the [Google AI Studio](https://makersuite.google.com/keys). If omitted here, the `GEMINI_API_KEY` environment variable will be used as a fallback.
     *   **`model_name`**: (Optional) Specify the Gemini model to use. If omitted, the program defaults to `gemini-pro`. Common valid models include `gemini-1.5-pro` or `gemini-pro`.
 
-    You must then provide the path to this file using the `--config` flag when running the `abstract` subcommand.
+    You must then provide the path to this file using the `--config` flag when running either `abstract` or `story` subcommand.
 
 ### Using Environment Variable (Recommended for quick setup or no custom config)
 
-If you don't provide a `--config` flag to the `abstract` subcommand, the program will look for your API key in the `GEMINI_API_KEY` environment variable and use `gemini-pro` as the model.
+If you don't provide a `--config` flag to either subcommand, the program will look for your API key in the `GEMINI_API_KEY` environment variable and use `gemini-pro` as the model.
 
 ```bash
 export GEMINI_API_KEY="YOUR_GEMINI_API_KEY"
-# Then run the program without --config for the abstract subcommand
+# Then run the program without --config for either subcommand
 ```
 
 ## Usage
@@ -152,6 +157,8 @@ go run main.go abstract \
 
 If `--chapters` is not provided, a random number between 20-40 will be used.
 
+*   **Chapter Count Extraction:** After generating and saving the abstract, the program performs an additional API call to Gemini to extract and display *only* the total number of chapters identified within the abstract. This provides a clean, numeric output for the chapter count before proceeding to full story generation.
+
 #### All Options for Abstract Subcommand
 
 ```bash
@@ -163,13 +170,36 @@ go run main.go abstract \
     --chapters 25
 ```
 
-### Story Subcommand (Future Feature)
+### Story Subcommand
 
-The `story` subcommand is a placeholder for generating full stories from an abstract.
+To generate a full story from an existing abstract, use the `story` subcommand. **The full abstract text is provided to the AI as context for each chapter generation, allowing the model to understand the overall narrative arc.**
+
+#### Basic Usage (using environment variable)
 
 ```bash
-go run main.go story
-# Output:
-# Story generation subcommand (future feature).
-# Usage: ai-story story [args...]
+export GEMINI_API_KEY="YOUR_GEMINI_API_KEY_HERE"
+go run main.go story \
+    --abstract-file "abstract-2023-10-27-10-30-45.txt" \
+    --words-per-chapter 500
+```
+This will generate a full story based on `abstract-2023-10-27-10-30-45.txt`, with each chapter aiming for around 500 words (actual word count may vary by +/- 20%). The output file will be named `fulltext-2023-10-27-10-30-45.txt`. Each chapter will be written to the output file immediately after generation.
+
+#### Custom Output Path and Configuration
+
+```bash
+go run main.go story \
+    --config "./my_custom_gemini_config.json" \
+    --abstract-file "my_story_abstract.txt" \
+    --words-per-chapter 750 \
+    --output "full_story_epic.txt"
+```
+
+#### All Options for Story Subcommand
+
+```bash
+go run main.go story \
+    --config "/home/user/my_gemini_keys/config.json" \
+    --abstract-file "fantasy_abstract.txt" \
+    --words-per-chapter 600 \
+    --output "generated_fantasy_story.txt"
 ```

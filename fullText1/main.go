@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/zicongmei/ai-story/fullText1/pkg/abstract"
+	"github.com/zicongmei/ai-story/fullText1/pkg/story" // Import the new story package
 )
 
 func main() {
@@ -23,10 +24,9 @@ func main() {
 			log.Fatalf("Abstract subcommand failed: %v", err)
 		}
 	case "story":
-		// Placeholder for future story generation logic
-		fmt.Println("Story generation subcommand (future feature).")
-		fmt.Println("Usage: ai-story story [args...]")
-		// Example: go run main.go story --abstract-file path/to/abstract.txt --output story.txt
+		if err := story.Execute(os.Args[2:]); err != nil {
+			log.Fatalf("Story subcommand failed: %v", err)
+		}
 	case "help":
 		printUsage()
 	default:
@@ -40,6 +40,7 @@ func printUsage() {
 	fmt.Println("Usage: ai-story <command> [arguments]")
 	fmt.Println("\nAvailable commands:")
 	fmt.Println("  abstract  Generate a story abstract/plan using Gemini API.")
-	fmt.Println("  story     Generate a full story from an abstract (future feature).")
+	fmt.Println("  story     Generate a full story from an abstract.")
 	fmt.Println("\nRun 'ai-story abstract --help' for abstract subcommand options.")
+	fmt.Println("Run 'ai-story story --help' for story subcommand options.")
 }
