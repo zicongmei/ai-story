@@ -5,6 +5,7 @@ This Go program uses the Google Gemini API to generate an abstract for a given s
 ## Features
 
 *   **Flexible Gemini API Configuration:** API key can be provided via a JSON configuration file (if `--config` is used) or the `GEMINI_API_KEY` environment variable. Model name can be specified in the config file or defaults to `gemini-pro`.
+*   **Output Language Control:** Specify the desired language for the generated abstract using the `--language` flag (defaults to `english`).
 *   **Default Settings:** Sensible defaults for output file name (`abstract-yyyy-mm-dd-hh-mm-ss.txt`). No default configuration file is assumed; if `--config` is not used, environment variables are checked.
 *   **Flexible Input:** Takes story instructions as an *optional* command-line argument. If omitted, a default generic story instruction ("A story about courage and discovery.") is used.
 *   **Persistent Output:** Saves the generated abstract to a specified (or default) text file.
@@ -113,11 +114,23 @@ go run createAbstract.go \
     --instruction "A detective with a troubled past is assigned a case involving a series of impossible disappearances in a secluded mountain town."
 ```
 
+### Specifying Output Language
+
+Generate the abstract in a language other than English (e.g., Spanish):
+
+```bash
+go run createAbstract.go \
+    --instruction "A brave knight embarks on a quest to save a princess from a dragon." \
+    --language "spanish" \
+    --output "spanish_abstract.txt"
+```
+
 ### All Options
 
 ```bash
 go run createAbstract.go \
     --config "/home/user/my_gemini_keys/config.json" \
     --output "fantasy_abstract.txt" \
-    --instruction "An ancient artifact awakens, granting its wielder immense power but also attracting a malevolent entity from another dimension."
+    --instruction "An ancient artifact awakens, granting its wielder immense power but also attracting a malevolent entity from another dimension." \
+    --language "french"
 ```

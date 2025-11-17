@@ -39,7 +39,7 @@ func loadGeminiConfig(configPath string) (*GeminiConfig, error) {
 }
 
 // generateAbstract interacts with the Gemini API to create a story abstract.
-func generateAbstract(apiKey, modelName, instruction string) (string, error) {
+func generateAbstract(apiKey, modelName, instruction, language string) (string, error) {
 	ctx := context.Background()
 	client, err := genai.NewClient(ctx, option.WithAPIKey(apiKey))
 	if err != nil {
@@ -58,6 +58,7 @@ func generateAbstract(apiKey, modelName, instruction string) (string, error) {
 
 	// Prompt engineering for a concise abstract
 	prompt := `Write a concise, compelling story writing plan. 
+It need to include the settings, the name of main characters and a detail plan for all charpters.
 	`
 
 	if instruction != "" {
@@ -65,6 +66,9 @@ func generateAbstract(apiKey, modelName, instruction string) (string, error) {
 	} else {
 		prompt += " Create a detailed story idea."
 	}
+
+	// Add language instruction to the prompt
+	prompt += fmt.Sprintf("\nOutput the plan in %s.", language)
 
 	resp, err := model.GenerateContent(ctx, genai.Text(prompt))
 	if err != nil {
@@ -96,6 +100,10 @@ func main() {
 	// Make --instruction optional with a default value
 	defaultInstruction := ""
 	instruction := flag.String("instruction", defaultInstruction, "Story instruction or idea for which to generate an abstract (optional). ")
+
+	// Add language parameter
+	language := flag.String("language", "english", "Specify the desired output language for the abstract (default: english).")
+
 	flag.Parse()
 
 	var apiKey string
@@ -153,8 +161,8 @@ func main() {
 	}
 
 	// --- Generate Abstract ---
-	log.Printf("Initiating abstract generation using Gemini model: %s", modelName)
-	abstract, err := generateAbstract(apiKey, modelName, *instruction)
+	log.Printf("Initiating abstract generation using Gemini model: %s, output language: %s", modelName, *language)
+	abstract, err := generateAbstract(apiKey, modelName, *instruction, *language)
 	if err != nil {
 		log.Fatalf("Error generating abstract: %v", err)
 	}
