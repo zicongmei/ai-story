@@ -6,6 +6,7 @@ This Go program uses the Google Gemini API to generate an abstract for a given s
 
 *   **Flexible Gemini API Configuration:** API key can be provided via a JSON configuration file (if `--config` is used) or the `GEMINI_API_KEY` environment variable. Model name can be specified in the config file or defaults to `gemini-pro`.
 *   **Output Language Control:** Specify the desired language for the generated abstract using the `--language` flag (defaults to `english`).
+*   **Chapter Count Control:** Specify the desired number of chapters using the `--chapters` flag. If not provided, a random number between 20 and 40 chapters will be generated.
 *   **Default Settings:** Sensible defaults for output file name (`abstract-yyyy-mm-dd-hh-mm-ss.txt`). No default configuration file is assumed; if `--config` is not used, environment variables are checked.
 *   **Flexible Input:** Takes story instructions as an *optional* command-line argument. If omitted, a default generic story instruction ("A story about courage and discovery.") is used.
 *   **Persistent Output:** Saves the generated abstract to a specified (or default) text file.
@@ -125,6 +126,18 @@ go run createAbstract.go \
     --output "spanish_abstract.txt"
 ```
 
+### Specifying Number of Chapters
+
+Provide a specific number of chapters for the story plan:
+
+```bash
+go run createAbstract.go \
+    --language chinese \
+    --chapters 30
+```
+
+If `--chapters` is not provided, a random number between 20-40 will be used.
+
 ### All Options
 
 ```bash
@@ -132,5 +145,6 @@ go run createAbstract.go \
     --config "/home/user/my_gemini_keys/config.json" \
     --output "fantasy_abstract.txt" \
     --instruction "An ancient artifact awakens, granting its wielder immense power but also attracting a malevolent entity from another dimension." \
-    --language "french"
+    --language "french" \
+    --chapters 25
 ```

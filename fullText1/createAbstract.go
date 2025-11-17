@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math/rand"
 	"os"
 	"strings"
 	"time"
@@ -39,7 +40,7 @@ func loadGeminiConfig(configPath string) (*GeminiConfig, error) {
 }
 
 // generateAbstract interacts with the Gemini API to create a story abstract.
-func generateAbstract(apiKey, modelName, instruction, language string) (string, error) {
+func generateAbstract(apiKey, modelName, instruction, language string, numChapters int) (string, error) {
 	ctx := context.Background()
 	client, err := genai.NewClient(ctx, option.WithAPIKey(apiKey))
 	if err != nil {
@@ -57,9 +58,10 @@ func generateAbstract(apiKey, modelName, instruction, language string) (string, 
 	}
 
 	// Prompt engineering for a concise abstract
-	prompt := `Write a concise, compelling story writing plan. 
-It need to include the settings, the name of main characters and a detail plan for all charpters.
-	`
+	// Dynamically include the number of chapters in the prompt
+	prompt := fmt.Sprintf(`Write a concise, compelling story writing plan. 
+It need to include the settings, the name of main characters and a detail plan for all %d chapters.
+	`, numChapters)
 
 	if instruction != "" {
 		prompt += "\nStory Idea: " + instruction
@@ -103,6 +105,9 @@ func main() {
 
 	// Add language parameter
 	language := flag.String("language", "english", "Specify the desired output language for the abstract (default: english).")
+
+	// Add chapters parameter
+	chapters := flag.Int("chapters", 0, "Specify the desired number of chapters for the story plan (optional). If not provided, a random number between 20-40 will be used.")
 
 	flag.Parse()
 
@@ -160,9 +165,21 @@ func main() {
 		log.Printf("Warning: Model name was somehow still empty, defaulting to %s.", modelName)
 	}
 
+	// Determine number of chapters
+	numChapters := *chapters
+	if numChapters == 0 {
+		// Seed the random number generator
+		rand.Seed(time.Now().UnixNano())
+		// Generate a random number between 20 and 40 (inclusive)
+		numChapters = rand.Intn(21) + 20 // rand.Intn(n) generates [0, n-1], so 21 gives [0, 20]. Adding 20 shifts it to [20, 40].
+		log.Printf("Number of chapters not specified. Generating a random number: %d", numChapters)
+	} else {
+		log.Printf("Using specified number of chapters: %d", numChapters)
+	}
+
 	// --- Generate Abstract ---
-	log.Printf("Initiating abstract generation using Gemini model: %s, output language: %s", modelName, *language)
-	abstract, err := generateAbstract(apiKey, modelName, *instruction, *language)
+	log.Printf("Initiating abstract generation using Gemini model: %s, output language: %s, chapters: %d", modelName, *language, numChapters)
+	abstract, err := generateAbstract(apiKey, modelName, *instruction, *language, numChapters)
 	if err != nil {
 		log.Fatalf("Error generating abstract: %v", err)
 	}
