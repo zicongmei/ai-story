@@ -1,4 +1,4 @@
-package main
+package abstract
 
 import (
 	"context"
@@ -25,7 +25,6 @@ type GeminiConfig struct {
 // It returns a *GeminiConfig and an error. If the file is not found or unreadable,
 // it returns an error, allowing the caller to decide on fallback behavior.
 func loadGeminiConfig(configPath string) (*GeminiConfig, error) {
-	// The path is used directly; no home directory expansion is performed.
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file '%s': %w", configPath, err)
@@ -49,10 +48,6 @@ func generateAbstract(apiKey, modelName, instruction, language string, numChapte
 	defer client.Close()
 
 	model := client.GenerativeModel(modelName)
-	// The client.GenerativeModel method typically returns a non-nil model struct
-	// even for invalid model names, with the error occurring on the API call.
-	// This specific 'if model == nil' check might not be hit in practice with genai-go library.
-	// Keeping it for consistency with original code, but actual model validation happens server-side.
 	if model == nil {
 		return "", fmt.Errorf("model '%s' could not be initialized (unexpected client state). Please check the model name.", modelName)
 	}
@@ -90,26 +85,31 @@ It need to include the settings, the name of main characters and a detail plan f
 	return abstractBuilder.String(), nil
 }
 
-func main() {
+// Execute is the main entry point for the 'abstract' subcommand.
+func Execute(args []string) error {
+	cmd := flag.NewFlagSet("abstract", flag.ContinueOnError) // Use ContinueOnError to allow main to handle errors
+	cmd.Usage = func() {
+		fmt.Fprintf(cmd.Output(), "Usage of %s abstract:\n", os.Args[0])
+		cmd.PrintDefaults()
+	}
+
 	// Default values for flags
-	defaultModelFromEnvOrNoConfig := "gemini-2.5-flash" // This model will be used if NO config file is loaded, or if config is loaded but modelName is empty in it.
+	defaultModelFromEnvOrNoConfig := "gemini-2.5-flash"
 
 	// Define command-line flags
-	// configPath now defaults to an empty string, meaning no config file is used by default.
-	configPath := flag.String("config", "", "Path to Gemini configuration JSON file (optional). If not provided, API key is taken from GEMINI_API_KEY env var and model defaults to '"+defaultModelFromEnvOrNoConfig+"'.")
-	outputPath := flag.String("output", "", "Path to save the generated abstract file (default: abstract-yyyy-mm-dd-hh-mm-ss.txt)")
+	configPath := cmd.String("config", "", "Path to Gemini configuration JSON file (optional). If not provided, API key is taken from GEMINI_API_KEY env var and model defaults to '"+defaultModelFromEnvOrNoConfig+"'.")
+	outputPath := cmd.String("output", "", "Path to save the generated abstract file (default: abstract-yyyy-mm-dd-hh-mm-ss.txt)")
 
-	// Make --instruction optional with a default value
 	defaultInstruction := ""
-	instruction := flag.String("instruction", defaultInstruction, "Story instruction or idea for which to generate an abstract (optional). ")
+	instruction := cmd.String("instruction", defaultInstruction, "Story instruction or idea for which to generate an abstract (optional). ")
 
-	// Add language parameter
-	language := flag.String("language", "english", "Specify the desired output language for the abstract (default: english).")
+	language := cmd.String("language", "english", "Specify the desired output language for the abstract (default: english).")
 
-	// Add chapters parameter
-	chapters := flag.Int("chapters", 0, "Specify the desired number of chapters for the story plan (optional). If not provided, a random number between 20-40 will be used.")
+	chapters := cmd.Int("chapters", 0, "Specify the desired number of chapters for the story plan (optional). If not provided, a random number between 20-40 will be used.")
 
-	flag.Parse()
+	if err := cmd.Parse(args); err != nil {
+		return fmt.Errorf("failed to parse abstract subcommand flags: %w", err)
+	}
 
 	var apiKey string
 	var modelName string
@@ -123,7 +123,7 @@ func main() {
 			// Fall through to environment variable logic.
 			apiKey = os.Getenv("GEMINI_API_KEY")
 			if apiKey == "" {
-				log.Fatalf("Error: GEMINI_API_KEY environment variable is not set, and the specified config file '%s' could not be loaded or was invalid. Please set GEMINI_API_KEY or provide a valid --config file.", *configPath)
+				return fmt.Errorf("GEMINI_API_KEY environment variable is not set, and the specified config file '%s' could not be loaded or was invalid. Please set GEMINI_API_KEY or provide a valid --config file", *configPath)
 			}
 			modelName = defaultModelFromEnvOrNoConfig // Use the hardcoded default model
 		} else {
@@ -136,7 +136,7 @@ func main() {
 				log.Printf("Warning: API Key is missing in the config file '%s'. Attempting to use GEMINI_API_KEY environment variable.", *configPath)
 				apiKey = os.Getenv("GEMINI_API_KEY")
 				if apiKey == "" {
-					log.Fatal("Error: API Key is missing in the config file and GEMINI_API_KEY environment variable is not set. Please provide an API key.")
+					return fmt.Errorf("API Key is missing in the config file and GEMINI_API_KEY environment variable is not set. Please provide an API key")
 				}
 			}
 
@@ -151,14 +151,14 @@ func main() {
 		log.Printf("No --config file specified. Attempting to use GEMINI_API_KEY environment variable and default model '%s'.", defaultModelFromEnvOrNoConfig)
 		apiKey = os.Getenv("GEMINI_API_KEY")
 		if apiKey == "" {
-			log.Fatal("Error: GEMINI_API_KEY environment variable is not set. Please set GEMINI_API_KEY or provide a valid --config file.")
+			return fmt.Errorf("GEMINI_API_KEY environment variable is not set. Please set GEMINI_API_KEY or provide a valid --config file")
 		}
 		modelName = defaultModelFromEnvOrNoConfig // Use the hardcoded default model
 	}
 
 	// Final check to ensure we have an API key and model name
 	if apiKey == "" {
-		log.Fatal("Error: No API key found after checking config file (if provided) and environment variable. Please provide it.")
+		return fmt.Errorf("no API key found after checking config file (if provided) and environment variable. Please provide it")
 	}
 	if modelName == "" { // This case should theoretically be covered by the logic above, but good for robustness.
 		modelName = defaultModelFromEnvOrNoConfig
@@ -181,7 +181,7 @@ func main() {
 	log.Printf("Initiating abstract generation using Gemini model: %s, output language: %s, chapters: %d", modelName, *language, numChapters)
 	abstract, err := generateAbstract(apiKey, modelName, *instruction, *language, numChapters)
 	if err != nil {
-		log.Fatalf("Error generating abstract: %v", err)
+		return fmt.Errorf("error generating abstract: %w", err)
 	}
 
 	// --- Determine Output Path ---
@@ -194,9 +194,11 @@ func main() {
 	// --- Save Abstract to File ---
 	err = os.WriteFile(finalOutputPath, []byte(abstract), 0644)
 	if err != nil {
-		log.Fatalf("Error saving abstract to file '%s': %v", finalOutputPath, err)
+		return fmt.Errorf("error saving abstract to file '%s': %w", finalOutputPath, err)
 	}
 
 	fmt.Printf("Abstract successfully generated and saved to: %s\n", finalOutputPath)
 	log.Printf("Abstract saved to: %s", finalOutputPath)
+
+	return nil
 }
