@@ -140,7 +140,6 @@ func CallGeminiAPI(ctx context.Context, apiKey, modelName, prompt string) (strin
 	outputTokens := 0
 	if resp.UsageMetadata != nil {
 		outputTokens = int(resp.UsageMetadata.CandidatesTokenCount)
-		log.Printf("Gemini API Call: Output token count: %d. Total tokens (input+output): %d", outputTokens, inputTokens+outputTokens)
 	} else {
 		log.Println("failed to count output token")
 	}

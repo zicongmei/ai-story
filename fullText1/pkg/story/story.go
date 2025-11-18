@@ -42,6 +42,35 @@ If no chapters are explicitly outlined, return 0.
 	return count, inputTokens, outputTokens, nil
 }
 
+// getWrittenChapterCountFromGemini sends the existing story content to Gemini to identify the last fully written chapter.
+func getWrittenChapterCountFromGemini(apiKey, modelName, existingStoryContent string) (int, int, int, error) {
+	prompt := fmt.Sprintf(`Given the following story text, identify the number of the last *fully written* chapter.
+Look for chapter headers like '## Chapter X' (where X is the chapter number).
+Return ONLY the number.
+If no fully written chapters are found, or if the last detected chapter appears incomplete (e.g., ends abruptly or contains error messages), return 0.
+Do not include any other text, explanation, or formatting. Just the pure integer number.
+
+--- Existing Story Content ---
+%s
+--- End Existing Story Content ---
+`, existingStoryContent)
+
+	countStr, inputTokens, outputTokens, err := utils.CallGeminiAPI(context.Background(), apiKey, modelName, prompt)
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("error calling Gemini to get written chapter count: %w", err)
+	}
+
+	countStr = strings.TrimSpace(countStr)
+	countStr = strings.Split(countStr, "\n")[0] // Take only the first line
+
+	count, err := strconv.Atoi(countStr)
+	if err != nil {
+		return 0, inputTokens, outputTokens, fmt.Errorf("could not parse written chapter count '%s' from Gemini response: %w", countStr, err)
+	}
+
+	return count, inputTokens, outputTokens, nil
+}
+
 // Execute is the main entry point for the 'story' subcommand.
 func Execute(args []string) error {
 	cmd := flag.NewFlagSet("story", flag.ContinueOnError)
@@ -79,17 +108,16 @@ func Execute(args []string) error {
 	}
 	abstractContent := string(abstractContentBytes)
 
-	// New Step: Get total chapter count from Gemini based on the abstract
-	log.Printf("Sending abstract to Gemini to get the total number of chapters...")
-	totalChapters, inputTokensCount, outputTokensCount, err := getChapterCountFromGeminiForStory(apiKey, modelName, abstractContent) // Updated call
+	// Get total chapter count from Gemini based on the abstract plan
+	log.Printf("Sending abstract to Gemini to get the total number of chapters planned...")
+	totalChapters, inputTokensCountPlan, outputTokensCountPlan, err := getChapterCountFromGeminiForStory(apiKey, modelName, abstractContent)
 	if err != nil {
 		return fmt.Errorf("failed to get total chapter count from Gemini for story generation: %w", err)
 	}
-	log.Printf("Chapter count determination complete. Input tokens: %d, Output tokens: %d", inputTokensCount, outputTokensCount)
-
+	log.Printf("Chapter plan determination complete. Input tokens: %d, Output tokens: %d", inputTokensCountPlan, outputTokensCountPlan)
 
 	if totalChapters == 0 {
-		return fmt.Errorf("Gemini returned 0 chapters for the abstract. Cannot proceed with story generation.")
+		return fmt.Errorf("Gemini returned 0 planned chapters for the abstract. Cannot proceed with story generation.")
 	}
 	fmt.Printf("Total chapters identified by Gemini for story generation: %d\n", totalChapters)
 	log.Printf("Total chapters identified by Gemini for story generation: %d", totalChapters)
@@ -97,53 +125,92 @@ func Execute(args []string) error {
 	// Determine output path
 	finalOutputPath := *outputPath
 	if finalOutputPath == "" {
-		// Replace "abstract-" with "fulltext-" and keep the timestamp
-		// This regex ensures we only modify filenames following the 'abstract-YYYY-MM-DD-HH-MM-SS.txt' pattern
-		// if it doesn't match, we fall back to a new timestamped name.
 		re := strings.NewReplacer("abstract-", "fulltext-")
 		if strings.HasPrefix(strings.ToLower(*abstractFilePath), "abstract-") && strings.HasSuffix(strings.ToLower(*abstractFilePath), ".txt") {
 			finalOutputPath = re.Replace(*abstractFilePath)
 		} else {
-			// Fallback if the abstract file name doesn't match the expected pattern
 			timestamp := time.Now().Format("2006-01-02-15-04-05")
 			finalOutputPath = fmt.Sprintf("fulltext-%s.txt", timestamp)
 		}
 	}
 
-	// Open the output file for writing, creating it if it doesn't exist, and appending to it
-	f, err := os.OpenFile(finalOutputPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	// Initialize variables for resuming logic
+	var chaptersAlreadyWritten int = 0
+	var existingStoryContent string = ""
+	var fileMode int // Will be set to os.O_CREATE|os.O_WRONLY or os.O_APPEND|os.O_WRONLY
+	var firstNewChapter int = 1
+	var accumulatedInputTokens = inputTokensCountPlan
+	var accumulatedOutputTokens = outputTokensCountPlan
+
+	// Check if output file already exists to determine resume point
+	if _, err := os.Stat(finalOutputPath); err == nil {
+		log.Printf("Output file '%s' already exists. Checking for existing chapters to resume...", finalOutputPath)
+		contentBytes, readErr := os.ReadFile(finalOutputPath)
+		if readErr != nil {
+			log.Printf("Warning: Failed to read existing file '%s' to determine written chapters: %v. Starting from Chapter 1 (will overwrite if abstract/header is incomplete).", finalOutputPath, readErr)
+			fileMode = os.O_CREATE | os.O_WRONLY
+		} else {
+			existingStoryContent = string(contentBytes)
+			// Ask Gemini to count chapters in the existing content
+			count, inputToks, outputToks, chapterCountErr := getWrittenChapterCountFromGemini(apiKey, modelName, existingStoryContent)
+			accumulatedInputTokens += inputToks
+			accumulatedOutputTokens += outputToks
+
+			if chapterCountErr != nil {
+				log.Printf("Warning: Failed to get written chapter count from Gemini for existing file: %v. Assuming 0 chapters written and starting from Chapter 1 (will overwrite if abstract/header is incomplete).", chapterCountErr)
+				fileMode = os.O_CREATE | os.O_WRONLY
+			} else {
+				chaptersAlreadyWritten = count
+				if chaptersAlreadyWritten > 0 {
+					firstNewChapter = chaptersAlreadyWritten + 1
+					fileMode = os.O_APPEND | os.O_WRONLY // Open in append mode
+					log.Printf("Detected %d chapters already written in '%s'. Resuming generation from Chapter %d.", chaptersAlreadyWritten, finalOutputPath, firstNewChapter)
+				} else {
+					log.Printf("No complete chapters detected in existing file '%s'. Starting from Chapter 1 (will overwrite if abstract/header is incomplete).", finalOutputPath)
+					fileMode = os.O_CREATE | os.O_WRONLY
+				}
+			}
+		}
+	} else {
+		log.Printf("Output file '%s' does not exist. Starting new story generation from Chapter 1.", finalOutputPath)
+		fileMode = os.O_CREATE | os.O_WRONLY
+	}
+
+	// Open the output file for writing based on determined mode
+	f, err := os.OpenFile(finalOutputPath, fileMode, 0644)
 	if err != nil {
 		return fmt.Errorf("error opening/creating output file '%s': %w", finalOutputPath, err)
 	}
-	defer f.Close() // Ensure the file is closed when the function exits
+	defer f.Close()
 
-	// Write initial header and abstract to the file
-	fmt.Fprintf(f, "--- Full Story: %s ---\n\n", time.Now().Format("2006-01-02 15:04:05"))
-	fmt.Fprintf(f, "Story Plan Abstract:\n%s\n\n", abstractContent)
-	fmt.Fprintf(f, "----------------------------------------\n\n")
+	// If starting fresh (new file or detected 0 chapters), write initial header and abstract
+	if chaptersAlreadyWritten == 0 {
+		fmt.Fprintf(f, "--- Full Story: %s ---\n\n", time.Now().Format("2006-01-02 15:04:05"))
+		fmt.Fprintf(f, "Story Plan Abstract:\n%s\n\n", abstractContent)
+		fmt.Fprintf(f, "----------------------------------------\n\n")
+	}
 
-	// Initialize accumulated token counts
-	accumulatedInputTokens := inputTokensCount // Start with the tokens from counting chapters
-	accumulatedOutputTokens := outputTokensCount
+	// previousChapters will accumulate generated chapters to be sent as context.
+	// If resuming, it starts with the existing content up to the point of resume.
+	previousChapters := existingStoryContent
 
+	// Generate story chapter by chapter, starting from 'firstNewChapter'
+	log.Printf("Starting full story generation from Chapter %d to Chapter %d, aiming for %d words per chapter...", firstNewChapter, totalChapters, *wordsPerChapter)
 
-	// Generate story chapter by chapter
-	log.Printf("Starting full story generation for %d chapters, aiming for %d words per chapter...", totalChapters, *wordsPerChapter)
-
-	previousChapters := "" // Accumulate generated chapters for context
-	for i := 0; i < totalChapters; i++ {
+	for i := firstNewChapter - 1; i < totalChapters; i++ {
 		chapterNum := i + 1
 
-		log.Printf("Generating Chapter %d", chapterNum)
+		log.Printf("Generating Chapter %d (out of %d)", chapterNum, totalChapters)
 
 		prompt := fmt.Sprintf(`Given the following complete story abstract (plan) and the chapters already written, please write Chapter %d of the story.
+Generate a short title for the charpter.
 The chapter should be approximately %d words. Focus on progressing the narrative as outlined in the abstract for this specific chapter.
 
 --- Full Story Abstract (Plan) ---
 %s
 --- End Full Story Abstract (Plan) ---
 
---- Previously Written Chapters ---
+--- Previously Written Chapters (including abstract and previous chapters) ---
 %s
 --- End Previously Written Chapters ---
 
@@ -151,16 +218,16 @@ Write Chapter %d now, ensuring it flows logically from previous chapters and adh
 `,
 			chapterNum,
 			*wordsPerChapter,
-			abstractContent, // Send the *entire* abstract content
-			previousChapters,
+			abstractContent,  // Send the *entire* abstract content
+			previousChapters, // This will contain existing content (if resuming) + newly generated chapters
 			chapterNum,
 		)
 
-		chapterText, chapterInputTokens, chapterOutputTokens, err := utils.CallGeminiAPI(context.Background(), apiKey, modelName, prompt) // Updated call
+		chapterText, chapterInputTokens, chapterOutputTokens, err := utils.CallGeminiAPI(context.Background(), apiKey, modelName, prompt)
 		if err != nil {
 			log.Printf("Warning: Failed to generate Chapter %d: %v. Attempting to continue with next chapter.", chapterNum, err)
 			chapterText = fmt.Sprintf("\n\n[ERROR: Failed to generate Chapter %d: %v]\n\n", chapterNum, err)
-			chapterInputTokens = 0 // On error, we might not get valid token counts from the failed call itself
+			chapterInputTokens = 0
 			chapterOutputTokens = 0
 		}
 
@@ -169,7 +236,6 @@ Write Chapter %d now, ensuring it flows logically from previous chapters and adh
 		accumulatedOutputTokens += chapterOutputTokens
 		log.Printf("Chapter %d tokens: Input %d, Output %d. Accumulated tokens: Input %d, Output %d",
 			chapterNum, chapterInputTokens, chapterOutputTokens, accumulatedInputTokens, accumulatedOutputTokens)
-
 
 		// Write the generated chapter directly to the file
 		chapterHeader := fmt.Sprintf("## Chapter %d\n\n", chapterNum)
@@ -183,7 +249,8 @@ Write Chapter %d now, ensuring it flows logically from previous chapters and adh
 		}
 		log.Printf("Chapter %d generated and written to file: %s", chapterNum, finalOutputPath)
 
-		previousChapters += fmt.Sprintf("## Chapter %d\n\n%s\n\n", chapterNum, strings.TrimSpace(chapterText))
+		// Append the newly generated chapter to previousChapters for the *next* iteration's context
+		previousChapters += chapterHeader + chapterContentToWrite
 		// Add a small delay to avoid hitting rate limits if generating many chapters quickly
 		time.Sleep(1 * time.Second)
 	}
