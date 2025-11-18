@@ -6,7 +6,7 @@ import (
 	"os"
 
 	"github.com/zicongmei/ai-story/fullText1/pkg/abstract"
-	"github.com/zicongmei/ai-story/fullText1/pkg/story" // Import the new story package
+	"github.com/zicongmei/ai-story/fullText1/pkg/story"
 )
 
 func main() {

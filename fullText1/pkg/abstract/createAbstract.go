@@ -7,8 +7,8 @@ import (
 	"log"
 	"math/rand"
 	"os"
-	"strconv" // Added for parsing the chapter number from Gemini
-	"strings" // Added for trimming whitespace
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/zicongmei/ai-story/fullText1/pkg/utils"

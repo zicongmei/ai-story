@@ -4,10 +4,10 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io" // Added for MultiWriter
+	"io"
 	"log"
 	"os"
-	"path/filepath" // Added for base filename extraction
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
