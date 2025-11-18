@@ -199,6 +199,7 @@ func Execute(args []string) error {
 	// Generate story chapter by chapter, starting from 'firstNewChapter'
 	log.Printf("Starting full story generation from Chapter %d to Chapter %d, aiming for %d words per chapter...", firstNewChapter, totalChapters, *wordsPerChapter)
 
+	const maxChapterRetries = 3 // Number of retries for chapter generation
 	for i := firstNewChapter - 1; i < totalChapters; i++ {
 		chapterNum := i + 1
 
@@ -225,13 +226,28 @@ Write Chapter %d now, ensuring it flows logically from previous chapters and adh
 			chapterNum,
 		)
 
-		chapterText, chapterInputTokens, chapterOutputTokens, chapterCost, err := utils.CallGeminiAPI(context.Background(), apiKey, modelName, prompt) // Updated call
-		if err != nil {
-			log.Printf("Warning: Failed to generate Chapter %d: %v. Attempting to continue with next chapter.", chapterNum, err)
-			chapterText = fmt.Sprintf("\n\n[ERROR: Failed to generate Chapter %d: %v]\n\n", chapterNum, err)
-			chapterInputTokens = 0
-			chapterOutputTokens = 0
-			chapterCost = 0
+		var chapterText string
+		var chapterInputTokens, chapterOutputTokens int
+		var chapterCost float64
+		var chapterGenerationErr error
+
+		// Retry logic for CallGeminiAPI for chapter generation
+		for attempt := 0; attempt <= maxChapterRetries; attempt++ {
+			if attempt > 0 {
+				log.Printf("Retrying Chapter %d (attempt %d/%d) after previous failure: %v", chapterNum, attempt, maxChapterRetries, chapterGenerationErr)
+				time.Sleep(2 * time.Second) // Small delay before retrying
+			}
+
+			chapterText, chapterInputTokens, chapterOutputTokens, chapterCost, chapterGenerationErr = utils.CallGeminiAPI(context.Background(), apiKey, modelName, prompt)
+			if chapterGenerationErr == nil {
+				// Success, break out of retry loop
+				break
+			}
+		}
+
+		if chapterGenerationErr != nil {
+			log.Fatalf("Critical Error: Failed to generate Chapter %d after %d attempts: %v. Marking chapter with error message and proceeding.", chapterNum, maxChapterRetries+1, chapterGenerationErr)
+
 		}
 
 		// Accumulate token counts and cost
@@ -262,7 +278,6 @@ Write Chapter %d now, ensuring it flows logically from previous chapters and adh
 	fmt.Printf("Full story successfully generated and saved to: %s\n", finalOutputPath)
 	log.Printf("Full story saved to: %s. Total accumulated tokens: Input %d, Output %d. Total accumulated cost: $%.6f", finalOutputPath, accumulatedInputTokens, accumulatedOutputTokens, accumulatedCost)
 	fmt.Printf("Total accumulated cost for full story generation process: $%.6f\n", accumulatedCost)
-
 
 	return nil
 }
