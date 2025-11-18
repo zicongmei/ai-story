@@ -14,7 +14,7 @@ import (
 )
 
 // getChapterCountFromGeminiForStory sends the abstract to Gemini to get a pure chapter count for story generation.
-func getChapterCountFromGeminiForStory(apiKey, modelName, abstract string) (int, error) {
+func getChapterCountFromGeminiForStory(apiKey, modelName, abstract string) (int, int, int, error) { // Updated signature
 	prompt := fmt.Sprintf(`Given the following complete story abstract (plan), please return ONLY the total number of chapters planned within it.
 Do not include any other text, explanation, or formatting. Just the pure number.
 If no chapters are explicitly outlined, return 0.
@@ -24,9 +24,9 @@ If no chapters are explicitly outlined, return 0.
 --- End Story Abstract ---
 `, abstract)
 
-	countStr, err := utils.CallGeminiAPI(context.Background(), apiKey, modelName, prompt)
+	countStr, inputTokens, outputTokens, err := utils.CallGeminiAPI(context.Background(), apiKey, modelName, prompt) // Updated call
 	if err != nil {
-		return 0, fmt.Errorf("error calling Gemini to get chapter count for story: %w", err)
+		return 0, 0, 0, fmt.Errorf("error calling Gemini to get chapter count for story: %w", err)
 	}
 
 	// Clean up the response to ensure it's a pure number
@@ -36,10 +36,10 @@ If no chapters are explicitly outlined, return 0.
 
 	count, err := strconv.Atoi(countStr)
 	if err != nil {
-		return 0, fmt.Errorf("could not parse chapter count '%s' from Gemini response for story: %w", countStr, err)
+		return 0, inputTokens, outputTokens, fmt.Errorf("could not parse chapter count '%s' from Gemini response for story: %w", countStr, err)
 	}
 
-	return count, nil
+	return count, inputTokens, outputTokens, nil
 }
 
 // Execute is the main entry point for the 'story' subcommand.
@@ -81,10 +81,12 @@ func Execute(args []string) error {
 
 	// New Step: Get total chapter count from Gemini based on the abstract
 	log.Printf("Sending abstract to Gemini to get the total number of chapters...")
-	totalChapters, err := getChapterCountFromGeminiForStory(apiKey, modelName, abstractContent)
+	totalChapters, inputTokensCount, outputTokensCount, err := getChapterCountFromGeminiForStory(apiKey, modelName, abstractContent) // Updated call
 	if err != nil {
 		return fmt.Errorf("failed to get total chapter count from Gemini for story generation: %w", err)
 	}
+	log.Printf("Chapter count determination complete. Input tokens: %d, Output tokens: %d", inputTokensCount, outputTokensCount)
+
 
 	if totalChapters == 0 {
 		return fmt.Errorf("Gemini returned 0 chapters for the abstract. Cannot proceed with story generation.")
@@ -120,6 +122,11 @@ func Execute(args []string) error {
 	fmt.Fprintf(f, "Story Plan Abstract:\n%s\n\n", abstractContent)
 	fmt.Fprintf(f, "----------------------------------------\n\n")
 
+	// Initialize accumulated token counts
+	accumulatedInputTokens := inputTokensCount // Start with the tokens from counting chapters
+	accumulatedOutputTokens := outputTokensCount
+
+
 	// Generate story chapter by chapter
 	log.Printf("Starting full story generation for %d chapters, aiming for %d words per chapter...", totalChapters, *wordsPerChapter)
 
@@ -149,11 +156,20 @@ Write Chapter %d now, ensuring it flows logically from previous chapters and adh
 			chapterNum,
 		)
 
-		chapterText, err := utils.CallGeminiAPI(context.Background(), apiKey, modelName, prompt)
+		chapterText, chapterInputTokens, chapterOutputTokens, err := utils.CallGeminiAPI(context.Background(), apiKey, modelName, prompt) // Updated call
 		if err != nil {
 			log.Printf("Warning: Failed to generate Chapter %d: %v. Attempting to continue with next chapter.", chapterNum, err)
 			chapterText = fmt.Sprintf("\n\n[ERROR: Failed to generate Chapter %d: %v]\n\n", chapterNum, err)
+			chapterInputTokens = 0 // On error, we might not get valid token counts from the failed call itself
+			chapterOutputTokens = 0
 		}
+
+		// Accumulate token counts
+		accumulatedInputTokens += chapterInputTokens
+		accumulatedOutputTokens += chapterOutputTokens
+		log.Printf("Chapter %d tokens: Input %d, Output %d. Accumulated tokens: Input %d, Output %d",
+			chapterNum, chapterInputTokens, chapterOutputTokens, accumulatedInputTokens, accumulatedOutputTokens)
+
 
 		// Write the generated chapter directly to the file
 		chapterHeader := fmt.Sprintf("## Chapter %d\n\n", chapterNum)
@@ -173,7 +189,7 @@ Write Chapter %d now, ensuring it flows logically from previous chapters and adh
 	}
 
 	fmt.Printf("Full story successfully generated and saved to: %s\n", finalOutputPath)
-	log.Printf("Full story saved to: %s", finalOutputPath)
+	log.Printf("Full story saved to: %s. Total accumulated tokens: Input %d, Output %d", finalOutputPath, accumulatedInputTokens, accumulatedOutputTokens)
 
 	return nil
 }

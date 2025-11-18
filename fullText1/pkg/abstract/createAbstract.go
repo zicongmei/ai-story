@@ -15,7 +15,7 @@ import (
 )
 
 // generateAbstract interacts with the Gemini API to create a story abstract.
-func generateAbstract(apiKey, modelName, instruction, language string, numChapters int) (string, error) {
+func generateAbstract(apiKey, modelName, instruction, language string, numChapters int) (string, int, int, error) { // Updated signature
 	// Prompt engineering for a concise abstract
 	// Dynamically include the number of chapters in the prompt
 	prompt := fmt.Sprintf(`Write a concise, compelling story writing plan.
@@ -31,16 +31,16 @@ It need to include the settings, the name of main characters and a detail plan f
 	// Add language instruction to the prompt
 	prompt += fmt.Sprintf("\nOutput the plan in %s.", language)
 
-	abstract, err := utils.CallGeminiAPI(context.Background(), apiKey, modelName, prompt)
+	abstract, inputTokens, outputTokens, err := utils.CallGeminiAPI(context.Background(), apiKey, modelName, prompt) // Updated call
 	if err != nil {
-		return "", fmt.Errorf("error generating content from Gemini: %w", err)
+		return "", 0, 0, fmt.Errorf("error generating content from Gemini: %w", err)
 	}
 
-	return abstract, nil
+	return abstract, inputTokens, outputTokens, nil
 }
 
 // getChapterCountFromGemini sends the abstract to Gemini to get a pure chapter count.
-func getChapterCountFromGemini(apiKey, modelName, abstract string) (int, error) {
+func getChapterCountFromGemini(apiKey, modelName, abstract string) (int, int, int, error) { // Updated signature
 	prompt := fmt.Sprintf(`Given the following complete story abstract (plan), please return ONLY the total number of chapters planned within it.
 Do not include any other text, explanation, or formatting. Just the pure number.
 
@@ -49,9 +49,9 @@ Do not include any other text, explanation, or formatting. Just the pure number.
 --- End Story Abstract ---
 `, abstract)
 
-	countStr, err := utils.CallGeminiAPI(context.Background(), apiKey, modelName, prompt)
+	countStr, inputTokens, outputTokens, err := utils.CallGeminiAPI(context.Background(), apiKey, modelName, prompt) // Updated call
 	if err != nil {
-		return 0, fmt.Errorf("error calling Gemini to get chapter count: %w", err)
+		return 0, 0, 0, fmt.Errorf("error calling Gemini to get chapter count: %w", err)
 	}
 
 	// Clean up the response to ensure it's a pure number
@@ -61,10 +61,10 @@ Do not include any other text, explanation, or formatting. Just the pure number.
 
 	count, err := strconv.Atoi(countStr)
 	if err != nil {
-		return 0, fmt.Errorf("could not parse chapter count '%s' from Gemini response: %w", countStr, err)
+		return 0, inputTokens, outputTokens, fmt.Errorf("could not parse chapter count '%s' from Gemini response: %w", countStr, err)
 	}
 
-	return count, nil
+	return count, inputTokens, outputTokens, nil
 }
 
 // Execute is the main entry point for the 'abstract' subcommand.
@@ -110,10 +110,12 @@ func Execute(args []string) error {
 
 	// --- Generate Abstract ---
 	log.Printf("Initiating abstract generation using Gemini model: %s, output language: %s, chapters: %d", modelName, *language, numChapters)
-	abstract, err := generateAbstract(apiKey, modelName, *instruction, *language, numChapters)
+	abstract, inputTokensAbstract, outputTokensAbstract, err := generateAbstract(apiKey, modelName, *instruction, *language, numChapters)
 	if err != nil {
 		return fmt.Errorf("error generating abstract: %w", err)
 	}
+	log.Printf("Abstract generation complete. Input tokens: %d, Output tokens: %d", inputTokensAbstract, outputTokensAbstract)
+
 
 	// --- Determine Output Path ---
 	finalOutputPath := *outputPath
@@ -133,12 +135,12 @@ func Execute(args []string) error {
 
 	// --- New Step: Get pure chapter count from Gemini ---
 	log.Printf("Sending abstract to Gemini to get pure chapter count...")
-	pureChapterCount, err := getChapterCountFromGemini(apiKey, modelName, abstract)
+	pureChapterCount, inputTokensCount, outputTokensCount, err := getChapterCountFromGemini(apiKey, modelName, abstract) // Updated call
 	if err != nil {
 		log.Printf("Warning: Failed to get pure chapter count from Gemini: %v. Proceeding without this information.", err)
 	} else {
 		fmt.Printf("Pure chapter count from Gemini: %d\n", pureChapterCount)
-		log.Printf("Pure chapter count from Gemini: %d", pureChapterCount)
+		log.Printf("Pure chapter count from Gemini: %d. Input tokens: %d, Output tokens: %d", pureChapterCount, inputTokensCount, outputTokensCount)
 	}
 
 	return nil

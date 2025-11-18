@@ -6,10 +6,8 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"strings"
 
-	"github.com/google/generative-ai-go/genai"
-	"google.golang.org/api/option"
+	"google.golang.org/genai"
 )
 
 const DefaultGeminiModel = "gemini-2.5-flash"
@@ -96,33 +94,57 @@ func LoadGeminiConfigWithFallback(configPath string) (string, string, error) {
 	return apiKey, modelName, nil
 }
 
-// CallGeminiAPI sends a prompt to the Gemini API and returns the generated text.
-func CallGeminiAPI(ctx context.Context, apiKey, modelName, prompt string) (string, error) {
-	client, err := genai.NewClient(ctx, option.WithAPIKey(apiKey))
-	if err != nil {
-		return "", fmt.Errorf("error creating Gemini client: %w", err)
-	}
-	defer client.Close()
+// CallGeminiAPI sends a prompt to the Gemini API and returns the generated text,
+// along with the input and output token counts.
+func CallGeminiAPI(ctx context.Context, apiKey, modelName, prompt string) (string, int, int, error) {
+	log.Printf("Gemini API Call: Initiating call to model '%s'. Prompt length: %d characters.", modelName, len(prompt))
 
-	model := client.GenerativeModel(modelName)
-	if model == nil {
-		return "", fmt.Errorf("model '%s' could not be initialized (unexpected client state). Please check the model name.", modelName)
+	client, err := genai.NewClient(ctx, &genai.ClientConfig{APIKey: apiKey})
+	if err != nil {
+		return "", 0, 0, fmt.Errorf("error creating Gemini client: %w", err)
 	}
 
-	resp, err := model.GenerateContent(ctx, genai.Text(prompt))
+	apiPrompt := genai.Text(prompt)
+	thinking := int32(-1)
+	genCofig := &genai.GenerateContentConfig{
+		ThinkingConfig: &genai.ThinkingConfig{
+			ThinkingBudget: &thinking,
+		},
+	}
+
+	countResp, err := client.Models.CountTokens(ctx, modelName, apiPrompt, &genai.CountTokensConfig{})
 	if err != nil {
-		return "", fmt.Errorf("error generating content from Gemini: %w", err)
+		log.Printf("Warning: Failed to count input tokens for prompt (length %d): %v", len(prompt), err)
+		// Don't return error here, proceed with generation but log 0 for input tokens
+	}
+	inputTokens := 0
+	if countResp != nil {
+		inputTokens = int(countResp.TotalTokens)
+	}
+	log.Printf("Gemini API Call: Input token count: %d", inputTokens)
+
+	resp, err := client.Models.GenerateContent(ctx, modelName, apiPrompt, genCofig)
+
+	if err != nil {
+		log.Printf("Gemini API Call: Error generating content: %v", err)
+		return "", inputTokens, 0, fmt.Errorf("error generating content from Gemini: %w", err)
 	}
 
 	if len(resp.Candidates) == 0 || resp.Candidates[0].Content == nil || len(resp.Candidates[0].Content.Parts) == 0 {
-		return "", fmt.Errorf("no content generated from Gemini for the given instruction")
+		log.Printf("Gemini API Call: No content generated for the given instruction.")
+		return "", inputTokens, 0, fmt.Errorf("no content generated from Gemini for the given instruction")
 	}
 
-	var responseBuilder strings.Builder
-	for _, part := range resp.Candidates[0].Content.Parts {
-		if txt, ok := part.(genai.Text); ok {
-			responseBuilder.WriteString(string(txt))
-		}
+	generatedText := resp.Text()
+
+	outputTokens := 0
+	if resp.UsageMetadata != nil {
+		outputTokens = int(resp.UsageMetadata.CandidatesTokenCount)
+		log.Printf("Gemini API Call: Output token count: %d. Total tokens (input+output): %d", outputTokens, inputTokens+outputTokens)
+	} else {
+		log.Println("failed to count output token")
 	}
-	return responseBuilder.String(), nil
+	log.Printf("Gemini API Call: Call to model '%s' completed. Input tokens: %d, Output tokens: %d", modelName, inputTokens, outputTokens)
+
+	return generatedText, inputTokens, outputTokens, nil
 }

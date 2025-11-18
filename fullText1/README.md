@@ -8,10 +8,12 @@ This Go program provides a command-line interface to interact with the Google Ge
 *   **Flexible Gemini API Configuration:** API key can be provided via a JSON configuration file (if `--config` is used) or the `GEMINI_API_KEY` environment variable. Model name can be specified in the config file or defaults to `gemini-pro`.
 *   **Output Language Control:** Specify the desired language for the generated abstract using the `--language` flag.
 *   **Chapter Count Control:** Specify the desired number of chapters using the `--chapters` flag for the abstract.
+*   **Detailed Token Logging:** Logs input and output token counts for every Gemini API call. For story generation, it also logs accumulated input and output token counts across all chapter generations.
 *   **Story Generation from Abstract:** The `story` subcommand takes an abstract and generates the full text, chapter by chapter, adhering to a specified word count per chapter, **sending the entire abstract to the AI as context for each chapter generation**. Each generated chapter is immediately appended to the output file.
 *   **Default Settings:** Sensible defaults for output file name (`abstract-yyyy-mm-dd-hh-mm-ss.txt` or `fulltext-yyyy-mm-dd-hh-mm-ss.txt`). No default configuration file is assumed; if `--config` is not used, environment variables are checked.
 *   **Flexible Input:** Takes story instructions as an *optional* command-line argument for the `abstract` subcommand.
 *   **Persistent Output:** Saves the generated abstract or full story to a specified (or default) text file.
+*   **Dynamic Thinking Budget:** The Gemini API calls are configured with `ThinkingBudget: -1`, enabling dynamic thinking by the model.
 
 ## Installation
 
@@ -158,6 +160,7 @@ go run main.go abstract \
 If `--chapters` is not provided, a random number between 20-40 will be used.
 
 *   **Chapter Count Extraction:** After generating and saving the abstract, the program performs an additional API call to Gemini to extract and display *only* the total number of chapters identified within the abstract. This provides a clean, numeric output for the chapter count before proceeding to full story generation.
+*   **Token Logging:** Input and output token counts for each Gemini API call (abstract generation and chapter count extraction) are logged to the console.
 
 #### All Options for Abstract Subcommand
 
@@ -183,6 +186,8 @@ go run main.go story \
     --words-per-chapter 500
 ```
 This will generate a full story based on `abstract-2023-10-27-10-30-45.txt`, with each chapter aiming for around 500 words (actual word count may vary by +/- 20%). The output file will be named `fulltext-2023-10-27-10-30-45.txt`. Each chapter will be written to the output file immediately after generation.
+
+*   **Token Logging:** Input and output token counts for each Gemini API call (chapter count extraction and individual chapter generation) are logged to the console. Accumulated input and output token counts for the entire story generation process are also logged after all chapters are generated.
 
 #### Custom Output Path and Configuration
 
