@@ -22,11 +22,23 @@ const (
 	Gemini25ProInputPriceHighTierPerMillion  float64 = 2.50
 	Gemini25ProOutputPriceHighTierPerMillion float64 = 15.00
 
+	// Gemini 3 Pro Preview (prompts <= 200k tokens)
+	Gemini3ProPreviewInputPriceLowTierPerMillion  float64 = 2.00
+	Gemini3ProPreviewOutputPriceLowTierPerMillion float64 = 12.00
+
+	// Gemini 3 Pro Preview (prompts > 200k tokens)
+	Gemini3ProPreviewInputPriceHighTierPerMillion  float64 = 4.00
+	Gemini3ProPreviewOutputPriceHighTierPerMillion float64 = 18.00
+
 	Gemini25ProPromptTokenThreshold = 200000
 
 	// Gemini 2.5 Flash
 	Gemini25FlashInputPricePerMillion  float64 = 0.30
 	Gemini25FlashOutputPricePerMillion float64 = 2.50
+
+	// Gemini 2.5 Flash Lite
+	Gemini25FlashLiteInputPricePerMillion  float64 = 0.10
+	Gemini25FlashLiteOutputPricePerMillion float64 = 0.40
 
 	TokensPerMillion float64 = 1_000_000.0
 )
@@ -53,10 +65,27 @@ func GetModelPrices(modelName string, inputTokens int) (*ModelPrices, error) {
 				OutputPricePerMillion: Gemini25ProOutputPriceHighTierPerMillion,
 			}, nil
 		}
+	case "gemini-3-pro-preview":
+		if inputTokens <= Gemini25ProPromptTokenThreshold {
+			return &ModelPrices{
+				InputPricePerMillion:  Gemini3ProPreviewInputPriceLowTierPerMillion,
+				OutputPricePerMillion: Gemini3ProPreviewOutputPriceLowTierPerMillion,
+			}, nil
+		} else {
+			return &ModelPrices{
+				InputPricePerMillion:  Gemini3ProPreviewInputPriceHighTierPerMillion,
+				OutputPricePerMillion: Gemini3ProPreviewOutputPriceHighTierPerMillion,
+			}, nil
+		}
 	case "gemini-2.5-flash":
 		return &ModelPrices{
 			InputPricePerMillion:  Gemini25FlashInputPricePerMillion,
 			OutputPricePerMillion: Gemini25FlashOutputPricePerMillion,
+		}, nil
+	case "gemini-2.5-flash-lite":
+		return &ModelPrices{
+			InputPricePerMillion:  Gemini25FlashLiteInputPricePerMillion,
+			OutputPricePerMillion: Gemini25FlashLiteOutputPricePerMillion,
 		}, nil
 	default:
 		return nil, fmt.Errorf("unsupported model for pricing: %s", modelName)
