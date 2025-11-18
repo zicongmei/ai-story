@@ -4,8 +4,10 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io" // Added for MultiWriter
 	"log"
 	"os"
+	"path/filepath" // Added for base filename extraction
 	"strconv"
 	"strings"
 	"time"
@@ -94,6 +96,40 @@ func Execute(args []string) error {
 	if *wordsPerChapter <= 0 {
 		return fmt.Errorf("--words-per-chapter must be a positive number")
 	}
+
+	// --- Configure logging to a file based on abstract name ---
+	// Preserve original log output and flags
+	originalLogOutput := log.Writer()
+	originalLogFlags := log.Flags()
+	defer func() {
+		log.SetOutput(originalLogOutput) // Restore original log output when Execute exits
+		log.SetFlags(originalLogFlags)   // Restore original log flags
+	}()
+
+	abstractFileName := filepath.Base(*abstractFilePath)
+	logFileName := ""
+	if strings.HasPrefix(strings.ToLower(abstractFileName), "abstract-") && strings.HasSuffix(strings.ToLower(abstractFileName), ".txt") {
+		// Example: abstract-2025-11-17-20-59-12.txt -> log-2025-11-17-20-59-12.log
+		logFileName = strings.Replace(abstractFileName, "abstract-", "log-", 1)
+		logFileName = strings.Replace(logFileName, ".txt", ".log", 1)
+	} else {
+		// Fallback for abstract files not matching the standard pattern
+		timestamp := time.Now().Format("2006-01-02-15-04-05")
+		logFileName = fmt.Sprintf("story-log-%s.log", timestamp)
+	}
+
+	logFile, err := os.OpenFile(logFileName, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		log.Printf("Warning: Failed to open log file '%s': %v. Logging will continue to stderr.", logFileName, err)
+		// If log file creation fails, don't change log output, just use stderr.
+	} else {
+		// Use MultiWriter to write to both the file and stderr
+		mw := io.MultiWriter(os.Stderr, logFile)
+		log.SetOutput(mw)
+		log.Printf("Logging to file: %s", logFileName)
+		defer logFile.Close() // Ensure the log file is closed
+	}
+	// --- End logging configuration ---
 
 	// Load Gemini config using the utility function
 	apiKey, modelName, err := utils.LoadGeminiConfigWithFallback(*configPath)

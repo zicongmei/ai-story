@@ -12,6 +12,7 @@ This Go program provides a command-line interface to interact with the Google Ge
 *   **Story Generation from Abstract:** The `story` subcommand takes an abstract and generates the full text, chapter by chapter, adhering to a specified word count per chapter, **sending the entire abstract to the AI as context for each chapter generation**. Each generated chapter is immediately appended to the output file.
 *   **Robust Chapter Generation:** When generating individual story chapters, if `utils.CallGeminiAPI` encounters an error, the program will automatically **retry up to 3 times** to regenerate that chapter before marking it with an error message and continuing. This improves resilience against transient API issues.
 *   **Resume Generation:** If the `--output` file already exists, the program will send its content to Gemini to identify the number of previously written chapters. Generation will then resume from the next missing chapter. The full content of the existing file (including abstract and previously written chapters) is sent as context for the first new chapter, and subsequent newly generated chapters are appended to this context for continuous flow.
+*   **Dedicated Log File for Story Generation:** When running the `story` subcommand, a separate log file will be created. If the `--abstract-file` is named `abstract-YYYY-MM-DD-HH-MM-SS.txt`, the log will be saved as `log-YYYY-MM-DD-HH-MM-SS.log` in the current directory. All `log.Printf` and `log.Fatalf` messages from the `story` subcommand will be written to this file in addition to `stderr`.
 *   **Default Settings:** Sensible defaults for output file name (`abstract-yyyy-mm-dd-hh-mm-ss.txt` or `fulltext-yyyy-mm-dd-hh-mm-ss.txt`). No default configuration file is assumed; if `--config` is not used, environment variables are checked.
 *   **Flexible Input:** Takes story instructions as an *optional* command-line argument for the `abstract` subcommand.
 *   **Persistent Output:** Saves the generated abstract or full story to a specified (or default) text file.
@@ -63,7 +64,7 @@ You can create a custom JSON file to store your API key and model name.
     ```json
     {
       "api_key": "YOUR_GEMINI_API_KEY",
-      "model_name": "gemini-1.5-pro"
+      "model_name": "gemini-2.5-pro"
     }
     ```
     *   **`api_key`**: Replace `YOUR_GEMINI_API_KEY` with your actual Google Gemini API key. You can obtain one from the [Google AI Studio](https://makersuite.google.com/keys). If omitted here, the `GEMINI_API_KEY` environment variable will be used as a fallback.
@@ -187,9 +188,9 @@ go run main.go story \
     --abstract-file "abstract-2023-10-27-10-30-45.txt" \
     --words-per-chapter 500
 ```
-This will generate a full story based on `abstract-2023-10-27-10-30-45.txt`, with each chapter aiming for around 500 words (actual word count may vary by +/- 20%). The output file will be named `fulltext-2023-10-27-10-30-45.txt`. Each chapter will be written to the output file immediately after generation.
+This will generate a full story based on `abstract-2023-10-27-10-30-45.txt`, with each chapter aiming for around 500 words (actual word count may vary by +/- 20%). The output file will be named `fulltext-2023-10-27-10-30-45.txt`. Each chapter will be written to the output file immediately after generation. A log file named `log-2023-10-27-10-30-45.log` will also be created, containing all log messages from the story generation process.
 
-*   **Token & Cost Logging:** Input and output token counts and estimated costs for each Gemini API call (chapter count extraction and individual chapter generation) are logged to the console. Accumulated input and output token counts and total estimated cost for the entire story generation process are also logged and displayed after all chapters are generated.
+*   **Token & Cost Logging:** Input and output token counts and estimated costs for each Gemini API call (chapter count extraction and individual chapter generation) are logged to the console and the dedicated log file. Accumulated input and output token counts and total estimated cost for the entire story generation process are also logged and displayed after all chapters are generated.
 
 #### Custom Output Path and Configuration
 
@@ -200,6 +201,7 @@ go run main.go story \
     --words-per-chapter 750 \
     --output "full_story_epic.txt"
 ```
+If `my_story_abstract.txt` doesn't follow the `abstract-YYYY-MM-DD-HH-MM-SS.txt` pattern, the log file will be named like `story-log-YYYY-MM-DD-HH-MM-SS.log`.
 
 #### All Options for Story Subcommand
 

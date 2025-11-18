@@ -34,3 +34,4 @@ hack/
 vendor/
 abstract-*.txt
 fulltext-*.txt
+log-*.log

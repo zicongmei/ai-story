@@ -24,6 +24,7 @@ func main() {
 			log.Fatalf("Abstract subcommand failed: %v", err)
 		}
 	case "story":
+		// The story.Execute function will handle setting up its own log file
 		if err := story.Execute(os.Args[2:]); err != nil {
 			log.Fatalf("Story subcommand failed: %v", err)
 		}
