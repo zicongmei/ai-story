@@ -12,6 +12,57 @@ import (
 
 const DefaultGeminiModel = "gemini-2.5-flash"
 
+// Pricing constants per 1 million tokens
+const (
+	// Gemini 2.5 Pro (prompts <= 200k tokens)
+	Gemini25ProInputPriceLowTierPerMillion  float64 = 1.25
+	Gemini25ProOutputPriceLowTierPerMillion float64 = 10.00
+
+	// Gemini 2.5 Pro (prompts > 200k tokens)
+	Gemini25ProInputPriceHighTierPerMillion  float64 = 2.50
+	Gemini25ProOutputPriceHighTierPerMillion float64 = 15.00
+
+	Gemini25ProPromptTokenThreshold = 200000
+
+	// Gemini 2.5 Flash
+	Gemini25FlashInputPricePerMillion  float64 = 0.30
+	Gemini25FlashOutputPricePerMillion float64 = 2.50
+
+	TokensPerMillion float64 = 1_000_000.0
+)
+
+// ModelPrices holds the per-million token pricing for a specific model tier.
+type ModelPrices struct {
+	InputPricePerMillion  float64
+	OutputPricePerMillion float64
+}
+
+// GetModelPrices returns the input and output prices per 1 million tokens for a given model and input token count.
+// The inputTokens parameter is crucial for determining the pricing tier for models like gemini-2.5-pro.
+func GetModelPrices(modelName string, inputTokens int) (*ModelPrices, error) {
+	switch modelName {
+	case "gemini-2.5-pro", "gemini-1.5-pro", "gemini-pro": // Treat "gemini-1.5-pro" and "gemini-pro" as "gemini-2.5-pro" for pricing based on available rates.
+		if inputTokens <= Gemini25ProPromptTokenThreshold {
+			return &ModelPrices{
+				InputPricePerMillion:  Gemini25ProInputPriceLowTierPerMillion,
+				OutputPricePerMillion: Gemini25ProOutputPriceLowTierPerMillion,
+			}, nil
+		} else {
+			return &ModelPrices{
+				InputPricePerMillion:  Gemini25ProInputPriceHighTierPerMillion,
+				OutputPricePerMillion: Gemini25ProOutputPriceHighTierPerMillion,
+			}, nil
+		}
+	case "gemini-2.5-flash":
+		return &ModelPrices{
+			InputPricePerMillion:  Gemini25FlashInputPricePerMillion,
+			OutputPricePerMillion: Gemini25FlashOutputPricePerMillion,
+		}, nil
+	default:
+		return nil, fmt.Errorf("unsupported model for pricing: %s", modelName)
+	}
+}
+
 // GeminiConfig holds the API key and model name for Gemini.
 type GeminiConfig struct {
 	APIKey    string `json:"api_key"`
@@ -95,13 +146,13 @@ func LoadGeminiConfigWithFallback(configPath string) (string, string, error) {
 }
 
 // CallGeminiAPI sends a prompt to the Gemini API and returns the generated text,
-// along with the input and output token counts.
-func CallGeminiAPI(ctx context.Context, apiKey, modelName, prompt string) (string, int, int, error) {
+// along with the input and output token counts, and the calculated cost.
+func CallGeminiAPI(ctx context.Context, apiKey, modelName, prompt string) (string, int, int, float64, error) { // Added float64 for cost
 	log.Printf("Gemini API Call: Initiating call to model '%s'. Prompt length: %d characters.", modelName, len(prompt))
 
 	client, err := genai.NewClient(ctx, &genai.ClientConfig{APIKey: apiKey})
 	if err != nil {
-		return "", 0, 0, fmt.Errorf("error creating Gemini client: %w", err)
+		return "", 0, 0, 0, fmt.Errorf("error creating Gemini client: %w", err)
 	}
 
 	apiPrompt := genai.Text(prompt)
@@ -112,9 +163,10 @@ func CallGeminiAPI(ctx context.Context, apiKey, modelName, prompt string) (strin
 		},
 	}
 
+	// First, count input tokens to determine pricing tier
 	countResp, err := client.Models.CountTokens(ctx, modelName, apiPrompt, &genai.CountTokensConfig{})
 	if err != nil {
-		log.Printf("Warning: Failed to count input tokens for prompt (length %d): %v", len(prompt), err)
+		log.Printf("Warning: Failed to count input tokens for prompt (length %d): %v. Proceeding with generation and assuming 0 input tokens for cost calculation.", len(prompt), err)
 		// Don't return error here, proceed with generation but log 0 for input tokens
 	}
 	inputTokens := 0
@@ -123,16 +175,23 @@ func CallGeminiAPI(ctx context.Context, apiKey, modelName, prompt string) (strin
 	}
 	log.Printf("Gemini API Call: Input token count: %d", inputTokens)
 
+	// Get model prices based on model name and input tokens
+	modelPrices, err := GetModelPrices(modelName, inputTokens)
+	if err != nil {
+		log.Printf("Warning: Could not get pricing for model '%s': %v. Cost will be reported as 0.", modelName, err)
+		modelPrices = &ModelPrices{} // Default to zero prices if not found
+	}
+
 	resp, err := client.Models.GenerateContent(ctx, modelName, apiPrompt, genCofig)
 
 	if err != nil {
 		log.Printf("Gemini API Call: Error generating content: %v", err)
-		return "", inputTokens, 0, fmt.Errorf("error generating content from Gemini: %w", err)
+		return "", inputTokens, 0, 0, fmt.Errorf("error generating content from Gemini: %w", err)
 	}
 
 	if len(resp.Candidates) == 0 || resp.Candidates[0].Content == nil || len(resp.Candidates[0].Content.Parts) == 0 {
 		log.Printf("Gemini API Call: No content generated for the given instruction.")
-		return "", inputTokens, 0, fmt.Errorf("no content generated from Gemini for the given instruction")
+		return "", inputTokens, 0, 0, fmt.Errorf("no content generated from Gemini for the given instruction")
 	}
 
 	generatedText := resp.Text()
@@ -141,9 +200,14 @@ func CallGeminiAPI(ctx context.Context, apiKey, modelName, prompt string) (strin
 	if resp.UsageMetadata != nil {
 		outputTokens = int(resp.UsageMetadata.CandidatesTokenCount)
 	} else {
-		log.Println("failed to count output token")
+		log.Println("failed to count output token, output tokens will be 0 for cost calculation.")
 	}
-	log.Printf("Gemini API Call: Call to model '%s' completed. Input tokens: %d, Output tokens: %d", modelName, inputTokens, outputTokens)
 
-	return generatedText, inputTokens, outputTokens, nil
+	// Calculate cost
+	cost := (float64(inputTokens)/TokensPerMillion)*modelPrices.InputPricePerMillion +
+		(float64(outputTokens)/TokensPerMillion)*modelPrices.OutputPricePerMillion
+
+	log.Printf("Gemini API Call: Call to model '%s' completed. Input tokens: %d, Output tokens: %d, Cost: $%.6f", modelName, inputTokens, outputTokens, cost)
+
+	return generatedText, inputTokens, outputTokens, cost, nil
 }

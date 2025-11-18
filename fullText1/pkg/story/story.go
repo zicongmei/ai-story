@@ -14,7 +14,7 @@ import (
 )
 
 // getChapterCountFromGeminiForStory sends the abstract to Gemini to get a pure chapter count for story generation.
-func getChapterCountFromGeminiForStory(apiKey, modelName, abstract string) (int, int, int, error) { // Updated signature
+func getChapterCountFromGeminiForStory(apiKey, modelName, abstract string) (int, int, int, float64, error) { // Updated signature for cost
 	prompt := fmt.Sprintf(`Given the following complete story abstract (plan), please return ONLY the total number of chapters planned within it.
 Do not include any other text, explanation, or formatting. Just the pure number.
 If no chapters are explicitly outlined, return 0.
@@ -24,9 +24,9 @@ If no chapters are explicitly outlined, return 0.
 --- End Story Abstract ---
 `, abstract)
 
-	countStr, inputTokens, outputTokens, err := utils.CallGeminiAPI(context.Background(), apiKey, modelName, prompt) // Updated call
+	countStr, inputTokens, outputTokens, cost, err := utils.CallGeminiAPI(context.Background(), apiKey, modelName, prompt) // Updated call
 	if err != nil {
-		return 0, 0, 0, fmt.Errorf("error calling Gemini to get chapter count for story: %w", err)
+		return 0, 0, 0, 0, fmt.Errorf("error calling Gemini to get chapter count for story: %w", err)
 	}
 
 	// Clean up the response to ensure it's a pure number
@@ -36,14 +36,14 @@ If no chapters are explicitly outlined, return 0.
 
 	count, err := strconv.Atoi(countStr)
 	if err != nil {
-		return 0, inputTokens, outputTokens, fmt.Errorf("could not parse chapter count '%s' from Gemini response for story: %w", countStr, err)
+		return 0, inputTokens, outputTokens, cost, fmt.Errorf("could not parse chapter count '%s' from Gemini response for story: %w", countStr, err)
 	}
 
-	return count, inputTokens, outputTokens, nil
+	return count, inputTokens, outputTokens, cost, nil
 }
 
 // getWrittenChapterCountFromGemini sends the existing story content to Gemini to identify the last fully written chapter.
-func getWrittenChapterCountFromGemini(apiKey, modelName, existingStoryContent string) (int, int, int, error) {
+func getWrittenChapterCountFromGemini(apiKey, modelName, existingStoryContent string) (int, int, int, float64, error) { // Updated signature for cost
 	prompt := fmt.Sprintf(`Given the following story text, identify the number of the last *fully written* chapter.
 Look for chapter headers like '## Chapter X' (where X is the chapter number).
 Return ONLY the number.
@@ -55,9 +55,9 @@ Do not include any other text, explanation, or formatting. Just the pure integer
 --- End Existing Story Content ---
 `, existingStoryContent)
 
-	countStr, inputTokens, outputTokens, err := utils.CallGeminiAPI(context.Background(), apiKey, modelName, prompt)
+	countStr, inputTokens, outputTokens, cost, err := utils.CallGeminiAPI(context.Background(), apiKey, modelName, prompt)
 	if err != nil {
-		return 0, 0, 0, fmt.Errorf("error calling Gemini to get written chapter count: %w", err)
+		return 0, 0, 0, 0, fmt.Errorf("error calling Gemini to get written chapter count: %w", err)
 	}
 
 	countStr = strings.TrimSpace(countStr)
@@ -65,10 +65,10 @@ Do not include any other text, explanation, or formatting. Just the pure integer
 
 	count, err := strconv.Atoi(countStr)
 	if err != nil {
-		return 0, inputTokens, outputTokens, fmt.Errorf("could not parse written chapter count '%s' from Gemini response: %w", countStr, err)
+		return 0, inputTokens, outputTokens, cost, fmt.Errorf("could not parse written chapter count '%s' from Gemini response: %w", countStr, err)
 	}
 
-	return count, inputTokens, outputTokens, nil
+	return count, inputTokens, outputTokens, cost, nil
 }
 
 // Execute is the main entry point for the 'story' subcommand.
@@ -110,11 +110,11 @@ func Execute(args []string) error {
 
 	// Get total chapter count from Gemini based on the abstract plan
 	log.Printf("Sending abstract to Gemini to get the total number of chapters planned...")
-	totalChapters, inputTokensCountPlan, outputTokensCountPlan, err := getChapterCountFromGeminiForStory(apiKey, modelName, abstractContent)
+	totalChapters, inputTokensCountPlan, outputTokensCountPlan, costCountPlan, err := getChapterCountFromGeminiForStory(apiKey, modelName, abstractContent) // Updated call
 	if err != nil {
 		return fmt.Errorf("failed to get total chapter count from Gemini for story generation: %w", err)
 	}
-	log.Printf("Chapter plan determination complete. Input tokens: %d, Output tokens: %d", inputTokensCountPlan, outputTokensCountPlan)
+	log.Printf("Chapter plan determination complete. Input tokens: %d, Output tokens: %d, Cost: $%.6f", inputTokensCountPlan, outputTokensCountPlan, costCountPlan)
 
 	if totalChapters == 0 {
 		return fmt.Errorf("Gemini returned 0 planned chapters for the abstract. Cannot proceed with story generation.")
@@ -141,6 +141,7 @@ func Execute(args []string) error {
 	var firstNewChapter int = 1
 	var accumulatedInputTokens = inputTokensCountPlan
 	var accumulatedOutputTokens = outputTokensCountPlan
+	var accumulatedCost = costCountPlan
 
 	// Check if output file already exists to determine resume point
 	if _, err := os.Stat(finalOutputPath); err == nil {
@@ -152,9 +153,10 @@ func Execute(args []string) error {
 		} else {
 			existingStoryContent = string(contentBytes)
 			// Ask Gemini to count chapters in the existing content
-			count, inputToks, outputToks, chapterCountErr := getWrittenChapterCountFromGemini(apiKey, modelName, existingStoryContent)
+			count, inputToks, outputToks, costToks, chapterCountErr := getWrittenChapterCountFromGemini(apiKey, modelName, existingStoryContent) // Updated call
 			accumulatedInputTokens += inputToks
 			accumulatedOutputTokens += outputToks
+			accumulatedCost += costToks
 
 			if chapterCountErr != nil {
 				log.Printf("Warning: Failed to get written chapter count from Gemini for existing file: %v. Assuming 0 chapters written and starting from Chapter 1 (will overwrite if abstract/header is incomplete).", chapterCountErr)
@@ -223,19 +225,21 @@ Write Chapter %d now, ensuring it flows logically from previous chapters and adh
 			chapterNum,
 		)
 
-		chapterText, chapterInputTokens, chapterOutputTokens, err := utils.CallGeminiAPI(context.Background(), apiKey, modelName, prompt)
+		chapterText, chapterInputTokens, chapterOutputTokens, chapterCost, err := utils.CallGeminiAPI(context.Background(), apiKey, modelName, prompt) // Updated call
 		if err != nil {
 			log.Printf("Warning: Failed to generate Chapter %d: %v. Attempting to continue with next chapter.", chapterNum, err)
 			chapterText = fmt.Sprintf("\n\n[ERROR: Failed to generate Chapter %d: %v]\n\n", chapterNum, err)
 			chapterInputTokens = 0
 			chapterOutputTokens = 0
+			chapterCost = 0
 		}
 
-		// Accumulate token counts
+		// Accumulate token counts and cost
 		accumulatedInputTokens += chapterInputTokens
 		accumulatedOutputTokens += chapterOutputTokens
-		log.Printf("Chapter %d tokens: Input %d, Output %d. Accumulated tokens: Input %d, Output %d",
-			chapterNum, chapterInputTokens, chapterOutputTokens, accumulatedInputTokens, accumulatedOutputTokens)
+		accumulatedCost += chapterCost
+		log.Printf("Chapter %d tokens: Input %d, Output %d, Cost: $%.6f. Accumulated tokens: Input %d, Output %d, Accumulated Cost: $%.6f",
+			chapterNum, chapterInputTokens, chapterOutputTokens, chapterCost, accumulatedInputTokens, accumulatedOutputTokens, accumulatedCost)
 
 		// Write the generated chapter directly to the file
 		chapterHeader := fmt.Sprintf("## Chapter %d\n\n", chapterNum)
@@ -256,7 +260,9 @@ Write Chapter %d now, ensuring it flows logically from previous chapters and adh
 	}
 
 	fmt.Printf("Full story successfully generated and saved to: %s\n", finalOutputPath)
-	log.Printf("Full story saved to: %s. Total accumulated tokens: Input %d, Output %d", finalOutputPath, accumulatedInputTokens, accumulatedOutputTokens)
+	log.Printf("Full story saved to: %s. Total accumulated tokens: Input %d, Output %d. Total accumulated cost: $%.6f", finalOutputPath, accumulatedInputTokens, accumulatedOutputTokens, accumulatedCost)
+	fmt.Printf("Total accumulated cost for full story generation process: $%.6f\n", accumulatedCost)
+
 
 	return nil
 }

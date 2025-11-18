@@ -15,7 +15,7 @@ import (
 )
 
 // generateAbstract interacts with the Gemini API to create a story abstract.
-func generateAbstract(apiKey, modelName, instruction, language string, numChapters int) (string, int, int, error) { // Updated signature
+func generateAbstract(apiKey, modelName, instruction, language string, numChapters int) (string, int, int, float64, error) { // Updated signature for cost
 	// Prompt engineering for a concise abstract
 	// Dynamically include the number of chapters in the prompt
 	prompt := fmt.Sprintf(`Write a concise, compelling story writing plan.
@@ -31,16 +31,16 @@ It need to include the settings, the name of main characters and a detail plan f
 	// Add language instruction to the prompt
 	prompt += fmt.Sprintf("\nOutput the plan in %s.", language)
 
-	abstract, inputTokens, outputTokens, err := utils.CallGeminiAPI(context.Background(), apiKey, modelName, prompt) // Updated call
+	abstract, inputTokens, outputTokens, cost, err := utils.CallGeminiAPI(context.Background(), apiKey, modelName, prompt) // Updated call
 	if err != nil {
-		return "", 0, 0, fmt.Errorf("error generating content from Gemini: %w", err)
+		return "", 0, 0, 0, fmt.Errorf("error generating content from Gemini: %w", err)
 	}
 
-	return abstract, inputTokens, outputTokens, nil
+	return abstract, inputTokens, outputTokens, cost, nil
 }
 
 // getChapterCountFromGemini sends the abstract to Gemini to get a pure chapter count.
-func getChapterCountFromGemini(apiKey, modelName, abstract string) (int, int, int, error) { // Updated signature
+func getChapterCountFromGemini(apiKey, modelName, abstract string) (int, int, int, float64, error) { // Updated signature for cost
 	prompt := fmt.Sprintf(`Given the following complete story abstract (plan), please return ONLY the total number of chapters planned within it.
 Do not include any other text, explanation, or formatting. Just the pure number.
 
@@ -49,9 +49,9 @@ Do not include any other text, explanation, or formatting. Just the pure number.
 --- End Story Abstract ---
 `, abstract)
 
-	countStr, inputTokens, outputTokens, err := utils.CallGeminiAPI(context.Background(), apiKey, modelName, prompt) // Updated call
+	countStr, inputTokens, outputTokens, cost, err := utils.CallGeminiAPI(context.Background(), apiKey, modelName, prompt) // Updated call
 	if err != nil {
-		return 0, 0, 0, fmt.Errorf("error calling Gemini to get chapter count: %w", err)
+		return 0, 0, 0, 0, fmt.Errorf("error calling Gemini to get chapter count: %w", err)
 	}
 
 	// Clean up the response to ensure it's a pure number
@@ -61,10 +61,10 @@ Do not include any other text, explanation, or formatting. Just the pure number.
 
 	count, err := strconv.Atoi(countStr)
 	if err != nil {
-		return 0, inputTokens, outputTokens, fmt.Errorf("could not parse chapter count '%s' from Gemini response: %w", countStr, err)
+		return 0, inputTokens, outputTokens, cost, fmt.Errorf("could not parse chapter count '%s' from Gemini response: %w", countStr, err)
 	}
 
-	return count, inputTokens, outputTokens, nil
+	return count, inputTokens, outputTokens, cost, nil
 }
 
 // Execute is the main entry point for the 'abstract' subcommand.
@@ -102,19 +102,26 @@ func Execute(args []string) error {
 		// Seed the random number generator
 		rand.Seed(time.Now().UnixNano())
 		// Generate a random number between 20 and 40 (inclusive)
-		numChapters = rand.Intn(21) + 20 // rand.Intn(n) generates [0, n-1], so 21 gives [0, 20]. Adding 20 shifts it to [20, 40].
+		numChapters = rand.Intn(21) + 20 // rand.Intn(n) generates [0, 20]. Adding 20 shifts it to [20, 40].
 		log.Printf("Number of chapters not specified for abstract generation. Generating a random number: %d", numChapters)
 	} else {
 		log.Printf("Using specified number of chapters: %d for abstract generation", numChapters)
 	}
 
+	var accumulatedInputTokens int
+	var accumulatedOutputTokens int
+	var accumulatedCost float64
+
 	// --- Generate Abstract ---
 	log.Printf("Initiating abstract generation using Gemini model: %s, output language: %s, chapters: %d", modelName, *language, numChapters)
-	abstract, inputTokensAbstract, outputTokensAbstract, err := generateAbstract(apiKey, modelName, *instruction, *language, numChapters)
+	abstract, inputTokensAbstract, outputTokensAbstract, costAbstract, err := generateAbstract(apiKey, modelName, *instruction, *language, numChapters)
 	if err != nil {
 		return fmt.Errorf("error generating abstract: %w", err)
 	}
-	log.Printf("Abstract generation complete. Input tokens: %d, Output tokens: %d", inputTokensAbstract, outputTokensAbstract)
+	accumulatedInputTokens += inputTokensAbstract
+	accumulatedOutputTokens += outputTokensAbstract
+	accumulatedCost += costAbstract
+	log.Printf("Abstract generation complete. Input tokens: %d, Output tokens: %d, Cost: $%.6f", inputTokensAbstract, outputTokensAbstract, costAbstract)
 
 
 	// --- Determine Output Path ---
@@ -135,13 +142,20 @@ func Execute(args []string) error {
 
 	// --- New Step: Get pure chapter count from Gemini ---
 	log.Printf("Sending abstract to Gemini to get pure chapter count...")
-	pureChapterCount, inputTokensCount, outputTokensCount, err := getChapterCountFromGemini(apiKey, modelName, abstract) // Updated call
+	pureChapterCount, inputTokensCount, outputTokensCount, costCount, err := getChapterCountFromGemini(apiKey, modelName, abstract) // Updated call
 	if err != nil {
 		log.Printf("Warning: Failed to get pure chapter count from Gemini: %v. Proceeding without this information.", err)
 	} else {
+		accumulatedInputTokens += inputTokensCount
+		accumulatedOutputTokens += outputTokensCount
+		accumulatedCost += costCount
 		fmt.Printf("Pure chapter count from Gemini: %d\n", pureChapterCount)
-		log.Printf("Pure chapter count from Gemini: %d. Input tokens: %d, Output tokens: %d", pureChapterCount, inputTokensCount, outputTokensCount)
+		log.Printf("Pure chapter count from Gemini: %d. Input tokens: %d, Output tokens: %d, Cost: $%.6f", pureChapterCount, inputTokensCount, outputTokensCount, costCount)
 	}
+
+	fmt.Printf("Total accumulated cost for abstract generation process: $%.6f\n", accumulatedCost)
+	log.Printf("Total accumulated tokens for abstract generation process: Input %d, Output %d. Total accumulated cost: $%.6f",
+		accumulatedInputTokens, accumulatedOutputTokens, accumulatedCost)
 
 	return nil
 }
