@@ -18,6 +18,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const accumulatedInputTokensDisplay = document.getElementById('accumulatedInputTokens'); 
     const accumulatedOutputTokensDisplay = document.getElementById('accumulatedOutputTokens'); 
     const accumulatedTokensDisplay = document.getElementById('accumulatedTokens'); 
+    
+    // Cost display elements
+    const currentRequestCostDisplay = document.getElementById('currentRequestCost');
+    const accumulatedCostDisplay = document.getElementById('accumulatedCost');
 
     // Debug elements
     const debugToggleBtn = document.getElementById('debugToggleBtn');
@@ -31,10 +35,37 @@ document.addEventListener('DOMContentLoaded', () => {
     // Global AbortController for stopping fetch requests
     let abortController = null;
 
+    // Pricing Configuration (Prices per 1 million tokens)
+    const PRICING = {
+        'gemini-3-pro-preview': {
+            tierLimit: 200000,
+            inputLow: 2.00, inputHigh: 4.00,
+            outputLow: 12.00, outputHigh: 18.00
+        },
+        'gemini-2.5-pro': {
+            tierLimit: 200000,
+            inputLow: 1.25, inputHigh: 2.50,
+            outputLow: 10.00, outputHigh: 15.00
+        },
+        'gemini-2.5-flash': {
+            tierLimit: Infinity, // No tier threshold mentioned for flash
+            inputLow: 0.30, inputHigh: 0.30,
+            outputLow: 2.50, outputHigh: 2.50
+        },
+        'gemini-2.5-flash-lite': {
+            tierLimit: Infinity,
+            inputLow: 0.10, inputHigh: 0.10,
+            outputLow: 0.40, outputHigh: 0.40
+        }
+    };
+
     // Load accumulated tokens from localStorage, default to 0 if not found
     let totalAccumulatedInputTokens = parseInt(localStorage.getItem('geminiTotalAccumulatedInputTokens') || '0', 10);
     let totalAccumulatedOutputTokens = parseInt(localStorage.getItem('geminiTotalAccumulatedOutputTokens') || '0', 10);
     let totalAccumulatedTokens = totalAccumulatedInputTokens + totalAccumulatedOutputTokens;
+    
+    // Load accumulated cost
+    let totalAccumulatedCost = parseFloat(localStorage.getItem('geminiTotalAccumulatedCost') || '0');
 
     const GEMINI_API_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models/';
 
@@ -54,6 +85,10 @@ Use the same language as input or previous paragraph.`;
     accumulatedOutputTokensDisplay.textContent = totalAccumulatedOutputTokens;
     if (accumulatedTokensDisplay) { 
         accumulatedTokensDisplay.textContent = totalAccumulatedTokens;
+    }
+    // Display loaded accumulated cost
+    if (accumulatedCostDisplay) {
+        accumulatedCostDisplay.textContent = `$${totalAccumulatedCost.toFixed(6)}`;
     }
 
     // Initialize button state based on loaded story content.
@@ -130,18 +165,25 @@ Use the same language as input or previous paragraph.`;
         localStorage.removeItem('geminiStoryOutput'); 
         localStorage.removeItem('geminiTotalAccumulatedInputTokens'); 
         localStorage.removeItem('geminiTotalAccumulatedOutputTokens'); 
+        localStorage.removeItem('geminiTotalAccumulatedCost');
 
         // Clear token displays
         totalAccumulatedInputTokens = 0; 
         totalAccumulatedOutputTokens = 0; 
         totalAccumulatedTokens = 0; 
+        totalAccumulatedCost = 0;
+
         currentRequestInputTokensDisplay.textContent = '0';
         currentRequestOutputTokensDisplay.textContent = '0';
         if (accumulatedInputTokensDisplay) { accumulatedInputTokensDisplay.textContent = '0'; }
-        if (accumulatedOutputTokensDisplay) { accumulatedInputTokensDisplay.textContent = '0'; }
+        if (accumulatedOutputTokensDisplay) { accumulatedOutputTokensDisplay.textContent = '0'; } // Fixed typo in variable name here
         if (accumulatedTokensDisplay) { 
             accumulatedTokensDisplay.textContent = '0';
         }
+
+        // Clear cost displays
+        if (currentRequestCostDisplay) currentRequestCostDisplay.textContent = '$0.000000';
+        if (accumulatedCostDisplay) accumulatedCostDisplay.textContent = '$0.000000';
 
         showError(''); 
     }
@@ -174,6 +216,21 @@ Use the same language as input or previous paragraph.`;
         }
     }
 
+    function calculateRequestCost(model, inputTokens, outputTokens) {
+        const pricing = PRICING[model];
+        if (!pricing) return 0;
+
+        // Prompt length determines the price tier for both input and output if tiered
+        const isHighTier = inputTokens > pricing.tierLimit;
+        const inputPricePerMillion = isHighTier ? pricing.inputHigh : pricing.inputLow;
+        const outputPricePerMillion = isHighTier ? pricing.outputHigh : pricing.outputLow;
+
+        const inputCost = (inputTokens / 1000000) * inputPricePerMillion;
+        const outputCost = (outputTokens / 1000000) * outputPricePerMillion;
+
+        return inputCost + outputCost;
+    }
+
     async function generateParagraph() {
         const apiKey = apiKeyInput.value.trim();
         const selectedModel = modelSelect.value;
@@ -203,6 +260,7 @@ Use the same language as input or previous paragraph.`;
 
         currentRequestInputTokensDisplay.textContent = 'Calculating...'; 
         currentRequestOutputTokensDisplay.textContent = 'Calculating...'; 
+        currentRequestCostDisplay.textContent = 'Calculating...';
         
         let userPrompt = '';
         if (currentStory === '') {
@@ -272,8 +330,14 @@ Use the same language as input or previous paragraph.`;
             const promptTokens = data.usageMetadata?.promptTokenCount || 0;
             const candidateTokens = data.usageMetadata?.candidatesTokenCount || 0; 
 
+            // Calculate Cost
+            const requestCost = calculateRequestCost(selectedModel, promptTokens, candidateTokens);
+            totalAccumulatedCost += requestCost;
+
+            // Update Displays
             currentRequestInputTokensDisplay.textContent = promptTokens;
             currentRequestOutputTokensDisplay.textContent = candidateTokens;
+            currentRequestCostDisplay.textContent = `$${requestCost.toFixed(6)}`;
             
             totalAccumulatedInputTokens += promptTokens;
             totalAccumulatedOutputTokens += candidateTokens;
@@ -284,9 +348,14 @@ Use the same language as input or previous paragraph.`;
             if (accumulatedTokensDisplay) { 
                 accumulatedTokensDisplay.textContent = totalAccumulatedTokens;
             }
+            if (accumulatedCostDisplay) {
+                accumulatedCostDisplay.textContent = `$${totalAccumulatedCost.toFixed(6)}`;
+            }
 
+            // Save to LocalStorage
             localStorage.setItem('geminiTotalAccumulatedInputTokens', totalAccumulatedInputTokens.toString());
             localStorage.setItem('geminiTotalAccumulatedOutputTokens', totalAccumulatedOutputTokens.toString());
+            localStorage.setItem('geminiTotalAccumulatedCost', totalAccumulatedCost.toString());
 
             if (generatedText) {
                 if (storyOutputTextarea.value.trim() === '') {
@@ -301,6 +370,7 @@ Use the same language as input or previous paragraph.`;
                 showError('No content generated. The model might have been blocked due to safety concerns or returned an empty response.');
                 currentRequestInputTokensDisplay.textContent = '0'; 
                 currentRequestOutputTokensDisplay.textContent = '0'; 
+                currentRequestCostDisplay.textContent = '$0.000000';
             }
 
         } catch (error) {
@@ -315,6 +385,7 @@ Use the same language as input or previous paragraph.`;
             }
             currentRequestInputTokensDisplay.textContent = '0'; 
             currentRequestOutputTokensDisplay.textContent = '0'; 
+            currentRequestCostDisplay.textContent = '$0.000000';
         } finally {
             generateBtn.disabled = false;
             generateBtn.classList.remove('hidden'); // Show generate button
