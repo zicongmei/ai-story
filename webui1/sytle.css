@@ -21,6 +21,7 @@ body {
     max-width: 800px; /* Limit overall width */
     margin-top: 20px;
     margin-bottom: 20px;
+    box-sizing: border-box;
 }
 
 h1 {
@@ -50,15 +51,17 @@ label {
     color: #555;
 }
 
+input[type="text"],
 input[type="password"],
 textarea,
 select {
-    width: calc(100% - 20px); /* Account for padding */
+    width: 100%; /* Set to 100% to fill container correctly with border-box */
     padding: 10px;
     border: 1px solid #ccc;
     border-radius: 4px;
     font-size: 1rem;
     box-sizing: border-box; /* Include padding in width calculation */
+    font-family: inherit;
 }
 
 textarea {
@@ -78,7 +81,7 @@ textarea {
 
 .next-paragraph-input-controls textarea {
     flex-grow: 1; /* Allow textarea to take available space */
-    width: auto; /* Override generic textarea width */
+    width: auto; /* Override generic textarea width to play nice with flex */
 }
 
 .clear-prompt-btn {
@@ -173,6 +176,12 @@ button:disabled {
 
 .token-display-group strong {
     color: #333;
+}
+
+.token-display-group hr {
+    margin: 5px 0;
+    border: 0;
+    border-top: 1px solid #ccc;
 }
 
 /* Debug Button */
@@ -283,4 +292,50 @@ button:disabled {
     word-break: break-all; /* Break words if necessary */
     color: #abb2bf;
     font-size: 0.9em;
+}
+
+/* Mobile Responsiveness */
+@media (max-width: 600px) {
+    body {
+        padding: 10px;
+        padding-bottom: 80px;
+    }
+
+    .container {
+        padding: 20px;
+        width: 100%;
+        margin-top: 10px;
+        margin-bottom: 10px;
+    }
+
+    h1 {
+        font-size: 1.5rem;
+    }
+
+    .next-paragraph-input-controls {
+        flex-direction: column;
+    }
+    
+    .next-paragraph-input-controls textarea {
+        width: 100%;
+    }
+
+    .clear-prompt-btn {
+        width: 100%;
+        margin-top: 5px;
+    }
+
+    .action-buttons {
+        flex-direction: column;
+    }
+    
+    .action-buttons button {
+        width: 100%;
+        margin-top: 10px;
+    }
+    
+    /* Remove margin from top button in stack */
+    .action-buttons button:first-child {
+        margin-top: 0;
+    }
 }
