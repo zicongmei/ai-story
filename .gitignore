@@ -34,5 +34,6 @@ hack/
 vendor/
 abstract-*.txt
 abstract-*.json
+abstract-*.yaml
 fulltext-*.txt
 log-*.log

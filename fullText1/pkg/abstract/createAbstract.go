@@ -2,7 +2,6 @@ package abstract
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -12,10 +11,12 @@ import (
 	"strings"
 	"time"
 
+	"gopkg.in/yaml.v3" // New import for YAML output
+
 	"github.com/zicongmei/ai-story/fullText1/pkg/utils"
 )
 
-// AbstractOutput structure for JSON output
+// AbstractOutput structure for YAML output
 type AbstractOutput struct {
 	Abstract         string `json:"abstract"`
 	ThoughtSignature []byte `json:"thought_signature"`
@@ -86,7 +87,7 @@ func Execute(args []string) error {
 
 	// Define command-line flags
 	configPath := cmd.String("config", "", "Path to Gemini configuration JSON file (optional). If not provided, API key is taken from GEMINI_API_KEY env var and model defaults to 'gemini-pro'.")
-	outputPath := cmd.String("output", "", "Path to save the generated abstract file (default: abstract-yyyy-mm-dd-hh-mm-ss.json)")
+	outputPath := cmd.String("output", "", "Path to save the generated abstract file (default: abstract-yyyy-mm-dd-hh-mm-ss.yaml)") // Changed default extension
 
 	defaultInstruction := ""
 	instruction := cmd.String("instruction", defaultInstruction, "Story instruction or idea for which to generate an abstract (optional). ")
@@ -133,25 +134,24 @@ func Execute(args []string) error {
 	accumulatedCost += costAbstract
 	log.Printf("Abstract generation complete. Input tokens: %d, Output tokens: %d, Cost: $%.6f", inputTokensAbstract, outputTokensAbstract, costAbstract)
 
-
 	// --- Determine Output Path ---
 	finalOutputPath := *outputPath
 	if finalOutputPath == "" {
 		timestamp := time.Now().Format("2006-01-02-15-04-05")
-		finalOutputPath = fmt.Sprintf("abstract-%s.json", timestamp)
+		finalOutputPath = fmt.Sprintf("abstract-%s.yaml", timestamp) // Changed to .yaml
 	}
 
-	// --- Save Abstract and Thought Signature to JSON File ---
+	// --- Save Abstract and Thought Signature to YAML File ---
 	outputData := AbstractOutput{
 		Abstract:         abstract,
 		ThoughtSignature: signature,
 	}
-	jsonBytes, err := json.MarshalIndent(outputData, "", "  ")
+	yamlBytes, err := yaml.Marshal(outputData) // Changed to yaml.Marshal
 	if err != nil {
-		return fmt.Errorf("error marshaling abstract output to JSON: %w", err)
+		return fmt.Errorf("error marshaling abstract output to YAML: %w", err) // Changed error message
 	}
 
-	err = os.WriteFile(finalOutputPath, jsonBytes, 0644)
+	err = os.WriteFile(finalOutputPath, yamlBytes, 0644)
 	if err != nil {
 		return fmt.Errorf("error saving abstract to file '%s': %w", finalOutputPath, err)
 	}

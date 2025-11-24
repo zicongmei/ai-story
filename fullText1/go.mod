@@ -2,7 +2,10 @@ module github.com/zicongmei/ai-story/fullText1
 
 go 1.24.8
 
-require google.golang.org/genai v1.36.0
+require (
+	google.golang.org/genai v1.36.0
+	gopkg.in/yaml.v3 v3.0.1
+)
 
 require (
 	cloud.google.com/go v0.123.0 // indirect
