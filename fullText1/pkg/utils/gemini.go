@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath" // Added
+	"time"          // Added
 
 	"google.golang.org/genai"
 )
@@ -237,6 +239,23 @@ func CallGeminiAPI(ctx context.Context, apiKey, modelName, prompt, thinkingLevel
 		}
 	}
 
+	// --- Log Request Body ---
+	timestamp := time.Now().Format("20060102_150405.000000") // More precise timestamp
+	reqFileName := filepath.Join(os.TempDir(), fmt.Sprintf("gemini_req_%s.json", timestamp))
+	respFileName := filepath.Join(os.TempDir(), fmt.Sprintf("gemini_resp_%s.json", timestamp))
+
+	reqBodyBytes, errMarshalReq := json.MarshalIndent(reqContents, "", "  ")
+	if errMarshalReq != nil {
+		log.Printf("Warning: Failed to marshal Gemini request contents for logging: %v", errMarshalReq)
+	} else {
+		if errWriteReq := os.WriteFile(reqFileName, reqBodyBytes, 0644); errWriteReq != nil {
+			log.Printf("Warning: Failed to write Gemini request body to '%s': %v", reqFileName, errWriteReq)
+		} else {
+			log.Printf("Gemini API Call: Request body saved to: %s", reqFileName)
+		}
+	}
+	// --- End Log Request Body ---
+
 	// For token counting, we only count the input parts.
 	// We need to construct a similar structure for CountTokens if possible, or just estimate.
 	// For simplicity and accuracy with the SDK, we'll try to count the constructed contents.
@@ -267,6 +286,23 @@ func CallGeminiAPI(ctx context.Context, apiKey, modelName, prompt, thinkingLevel
 
 	// Generate content
 	resp, err := client.Models.GenerateContent(ctx, modelName, reqContents, genConfig)
+
+	// --- Log Response Body ---
+	if resp != nil {
+		respBodyBytes, errMarshalResp := json.MarshalIndent(resp, "", "  ")
+		if errMarshalResp != nil {
+			log.Printf("Warning: Failed to marshal Gemini response for logging: %v", errMarshalResp)
+		} else {
+			if errWriteResp := os.WriteFile(respFileName, respBodyBytes, 0644); errWriteResp != nil {
+				log.Printf("Warning: Failed to write Gemini response body to '%s': %v", respFileName, errWriteResp)
+			} else {
+				log.Printf("Gemini API Call: Response body saved to: %s", respFileName)
+			}
+		}
+	} else {
+		log.Printf("Gemini API Call: No response object to log.")
+	}
+	// --- End Log Response Body ---
 
 	if err != nil {
 		log.Printf("Gemini API Call: Error generating content: %v", err)
