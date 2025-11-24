@@ -24,15 +24,7 @@ This Go program provides a command-line interface to interact with the Google Ge
 1.  **Install Go:** If you don't have Go installed, follow the instructions on the [official Go website](https://go.dev/doc/install).
 
 2.  **Clone the repository (or create the file structure):**
-    ```bash
-    mkdir -p /usr/local/google/home/zicong/code/src/github.com/zicongmei/ai-story/fullText1/pkg/abstract
-    mkdir -p /usr/local/google/home/zicong/code/src/github.com/zicongmei/ai-story/fullText1/pkg/story
-    mkdir -p /usr/local/google/home/zicong/code/src/github.com/zicongmei/ai-story/fullText1/pkg/aiEndpoint
-    # Place main.go in /usr/local/google/home/zicong/code/src/github.com/zicongmei/ai-story/fullText1/
-    # Place createAbstract.go in /usr/local/google/home/zicong/code/src/github.com/zicongmei/ai-story/fullText1/pkg/abstract/
-    # Place story.go in /usr/local/google/home/zicong/code/src/github.com/zicongmei/ai-story/fullText1/pkg/story/
-    # Place gemini.go in /usr/local/google/home/zicong/code/src/github.com/zicongmei/ai-story/fullText1/pkg/aiEndpoint/
-    ```
+    Clone the repo.
 
 3.  **Install the Google Generative AI Go library and YAML library:**
     Navigate to the project root (`/usr/local/google/home/zicong/code/src/github.com/zicongmei/ai-story/fullText1`) and run:

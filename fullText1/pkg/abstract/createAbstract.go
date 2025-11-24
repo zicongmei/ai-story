@@ -11,16 +11,17 @@ import (
 	"strings"
 	"time"
 
-	"gopkg.in/yaml.v3" // New import for YAML output
+	// "gopkg.in/yaml.v3" // Moved to pkg/abstract/file
 
+	"github.com/zicongmei/ai-story/fullText1/pkg/abstract/file" // New import
 	"github.com/zicongmei/ai-story/fullText1/pkg/aiEndpoint"
 )
 
-// AbstractOutput structure for YAML output
-type AbstractOutput struct {
-	Abstract         string `json:"abstract"`
-	ThoughtSignature []byte `json:"thought_signature"`
-}
+// AbstractOutput structure for YAML output - MOVED to pkg/abstract/file
+// type AbstractOutput struct {
+// 	Abstract         string `json:"abstract"`
+// 	ThoughtSignature []byte `json:"thought_signature"`
+// }
 
 // GenerateAbstractInput holds all input parameters for the generateAbstract function.
 type GenerateAbstractInput struct {
@@ -218,18 +219,9 @@ func Execute(args []string) error {
 	}
 
 	// --- Save Abstract and Thought Signature to YAML File ---
-	outputData := AbstractOutput{
-		Abstract:         abstract,
-		ThoughtSignature: signature,
-	}
-	yamlBytes, err := yaml.Marshal(outputData) // Changed to yaml.Marshal
+	err := file.WriteAbstractFile(finalOutputPath, abstract, signature)
 	if err != nil {
-		return fmt.Errorf("error marshaling abstract output to YAML: %w", err) // Changed error message
-	}
-
-	err = os.WriteFile(finalOutputPath, yamlBytes, 0644)
-	if err != nil {
-		return fmt.Errorf("error saving abstract to file '%s': %w", finalOutputPath, err)
+		return fmt.Errorf("error saving abstract: %w", err)
 	}
 
 	fmt.Printf("Abstract successfully generated and saved to: %s\n", finalOutputPath)

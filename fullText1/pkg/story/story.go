@@ -2,7 +2,7 @@ package story
 
 import (
 	"context"
-	"encoding/json"
+	// "encoding/json" // Moved to pkg/abstract/file
 	"flag"
 	"fmt"
 	"io"
@@ -13,8 +13,9 @@ import (
 	"strings"
 	"time"
 
-	"gopkg.in/yaml.v3" // New import for YAML parsing
+	// "gopkg.in/yaml.v3" // Moved to pkg/abstract/file
 
+	"github.com/zicongmei/ai-story/fullText1/pkg/abstract/file" // New import
 	"github.com/zicongmei/ai-story/fullText1/pkg/aiEndpoint"
 )
 
@@ -200,45 +201,15 @@ func Execute(args []string) error {
 	modelName := geminiConfigDetails.ModelName
 	thinkingLevel := geminiConfigDetails.ThinkingLevel
 
-	// Read abstract file
-	abstractContentBytes, err := os.ReadFile(*abstractFilePath)
+	// Read abstract file using the new utility function
+	abstractContent, parsed, err := file.ReadAbstractFile(*abstractFilePath)
 	if err != nil {
-		return fmt.Errorf("failed to read abstract file '%s': %w", *abstractFilePath, err)
+		return fmt.Errorf("failed to read and parse abstract file '%s': %w", *abstractFilePath, err)
 	}
-
-	// Default to the raw content, will be overwritten if parsed successfully
-	abstractContent := string(abstractContentBytes)
-	parsed := false // Flag to track if parsing was successful
-
-	if strings.HasSuffix(strings.ToLower(*abstractFilePath), ".yaml") || strings.HasSuffix(strings.ToLower(*abstractFilePath), ".yml") {
-		var abstractData struct {
-			Abstract string `yaml:"abstract"`
-		}
-		if err := yaml.Unmarshal(abstractContentBytes, &abstractData); err != nil {
-			log.Printf("Warning: Failed to parse abstract file '%s' as YAML: %v. Attempting to treat as plain text.", *abstractFilePath, err)
-			// Continue, abstractContent remains raw content
-		} else {
-			abstractContent = abstractData.Abstract
-			log.Printf("Successfully parsed abstract content from YAML file.")
-			parsed = true
-		}
-	} else if strings.HasSuffix(strings.ToLower(*abstractFilePath), ".json") {
-		var abstractData struct {
-			Abstract string `json:"abstract"`
-		}
-		if err := json.Unmarshal(abstractContentBytes, &abstractData); err != nil {
-			log.Printf("Warning: Failed to parse abstract file '%s' as JSON: %v. Attempting to treat as plain text.", *abstractFilePath, err)
-			// Continue, abstractContent remains raw content
-		} else {
-			abstractContent = abstractData.Abstract
-			log.Printf("Successfully parsed abstract content from JSON file.")
-			parsed = true
-		}
-	}
-
-	if !parsed {
-		log.Printf("Abstract file '%s' is not a recognized YAML or JSON format, or parsing failed. Treating content as plain text abstract.", *abstractFilePath)
-	}
+	// The 'parsed' variable is returned, but not explicitly used after this point in story.go.
+	// If the abstract was successfully parsed from YAML/JSON, abstractContent will contain just the abstract text.
+	// Otherwise, it will contain the raw file content, which is still okay for the prompt.
+	_ = parsed // Suppress "declared and not used" warning if it's not used.
 
 	// Get total chapter count from Gemini based on the abstract plan
 	log.Printf("Sending abstract to Gemini to get the total number of chapters planned...")
