@@ -43,6 +43,13 @@ const (
 	TokensPerMillion float64 = 1_000_000.0
 )
 
+// HistoryTurn represents a single turn in the conversation history used for preserving thought chains.
+type HistoryTurn struct {
+	UserPrompt       string
+	ModelResponse    string
+	ThoughtSignature string
+}
+
 // ModelPrices holds the per-million token pricing for a specific model tier.
 type ModelPrices struct {
 	InputPricePerMillion  float64
@@ -177,18 +184,39 @@ func LoadGeminiConfigWithFallback(configPath string) (string, string, string, er
 	return apiKey, modelName, thinkingLevel, nil
 }
 
-// CallGeminiAPI sends a prompt to the Gemini API and returns the generated text,
+// CallGeminiAPI sends a prompt to the Gemini API and returns the generated text, thought signature,
 // along with the input and output token counts, and the calculated cost.
-// It supports an optional thinkingLevel for compatible models (e.g., gemini-3-pro-preview).
-func CallGeminiAPI(ctx context.Context, apiKey, modelName, prompt, thinkingLevel string) (string, int, int, float64, error) { // Added thinkingLevel
+// It supports an optional thinkingLevel and previous conversation history for thought chain continuity.
+func CallGeminiAPI(ctx context.Context, apiKey, modelName, prompt, thinkingLevel string, previousTurn *HistoryTurn) (string, string, int, int, float64, error) { // Updated signature
 	log.Printf("Gemini API Call: Initiating call to model '%s'. Thinking Level: '%s'. Prompt length: %d characters.", modelName, thinkingLevel, len(prompt))
 
 	client, err := genai.NewClient(ctx, &genai.ClientConfig{APIKey: apiKey})
 	if err != nil {
-		return "", 0, 0, 0, fmt.Errorf("error creating Gemini client: %w", err)
+		return "", "", 0, 0, 0, fmt.Errorf("error creating Gemini client: %w", err)
 	}
 
-	apiPrompt := genai.Text(prompt)
+	// Construct request contents, potentially including history
+	var reqContents []*genai.Content
+
+	if previousTurn != nil {
+		reqContents = append(reqContents, &genai.Content{
+			Role:  "user",
+			Parts: []*genai.Part{{Text: previousTurn.UserPrompt}},
+		})
+		reqContents = append(reqContents, &genai.Content{
+			Role: "model",
+			Parts: []*genai.Part{{
+				Text:             previousTurn.ModelResponse,
+				ThoughtSignature: []byte(previousTurn.ThoughtSignature),
+			}},
+		})
+	}
+
+	// Add current prompt
+	reqContents = append(reqContents, &genai.Content{
+		Role:  "user",
+		Parts: []*genai.Part{{Text: prompt}},
+	})
 
 	var genConfig *genai.GenerateContentConfig
 
@@ -209,10 +237,19 @@ func CallGeminiAPI(ctx context.Context, apiKey, modelName, prompt, thinkingLevel
 		}
 	}
 
+	// For token counting, we only count the input parts.
+	// We need to construct a similar structure for CountTokens if possible, or just estimate.
+	// For simplicity and accuracy with the SDK, we'll try to count the constructed contents.
+	// Note: Client.Models.CountTokens expects a list of contents if passing complex history,
+	// but the Go SDK signature takes `...*Content` or similar? Check SDK.
+	// genai.CountTokensConfig usually takes the same arguments as GenerateContent.
+	// Since CountTokens signature might differ slightly in how it accepts parts vs content list,
+	// we will try to pass the same content structure.
+
 	// First, count input tokens to determine pricing tier
-	countResp, err := client.Models.CountTokens(ctx, modelName, apiPrompt, &genai.CountTokensConfig{})
+	countResp, err := client.Models.CountTokens(ctx, modelName, reqContents, &genai.CountTokensConfig{})
 	if err != nil {
-		log.Printf("Warning: Failed to count input tokens for prompt (length %d): %v. Proceeding with generation and assuming 0 input tokens for cost calculation.", len(prompt), err)
+		log.Printf("Warning: Failed to count input tokens for prompt: %v. Proceeding with generation and assuming 0 input tokens for cost calculation.", err)
 		// Don't return error here, proceed with generation but log 0 for input tokens
 	}
 	inputTokens := 0
@@ -228,19 +265,24 @@ func CallGeminiAPI(ctx context.Context, apiKey, modelName, prompt, thinkingLevel
 		modelPrices = &ModelPrices{} // Default to zero prices if not found
 	}
 
-	resp, err := client.Models.GenerateContent(ctx, modelName, apiPrompt, genConfig)
+	// Generate content
+	resp, err := client.Models.GenerateContent(ctx, modelName, reqContents, genConfig)
 
 	if err != nil {
 		log.Printf("Gemini API Call: Error generating content: %v", err)
-		return "", inputTokens, 0, 0, fmt.Errorf("error generating content from Gemini: %w", err)
+		return "", "", inputTokens, 0, 0, fmt.Errorf("error generating content from Gemini: %w", err)
 	}
 
 	if len(resp.Candidates) == 0 || resp.Candidates[0].Content == nil || len(resp.Candidates[0].Content.Parts) == 0 {
 		log.Printf("Gemini API Call: No content generated for the given instruction.")
-		return "", inputTokens, 0, 0, fmt.Errorf("no content generated from Gemini for the given instruction")
+		return "", "", inputTokens, 0, 0, fmt.Errorf("no content generated from Gemini for the given instruction")
 	}
 
 	generatedText := resp.Text()
+	thoughtSignature := ""
+	if len(resp.Candidates) > 0 && len(resp.Candidates[0].Content.Parts) > 0 {
+		thoughtSignature = resp.Candidates[0].Content.Parts[0].ThoughtSignature
+	}
 
 	outputTokens := 0
 	if resp.UsageMetadata != nil {
@@ -255,5 +297,5 @@ func CallGeminiAPI(ctx context.Context, apiKey, modelName, prompt, thinkingLevel
 
 	log.Printf("Gemini API Call: Call to model '%s' completed. Input tokens: %d, Output tokens: %d, Cost: $%.6f", modelName, inputTokens, outputTokens, cost)
 
-	return generatedText, inputTokens, outputTokens, cost, nil
+	return generatedText, thoughtSignature, inputTokens, outputTokens, cost, nil
 }

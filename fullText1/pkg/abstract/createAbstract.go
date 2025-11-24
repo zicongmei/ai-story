@@ -2,6 +2,7 @@ package abstract
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -14,8 +15,14 @@ import (
 	"github.com/zicongmei/ai-story/fullText1/pkg/utils"
 )
 
+// AbstractOutput structure for JSON output
+type AbstractOutput struct {
+	Abstract         string `json:"abstract"`
+	ThoughtSignature string `json:"thought_signature"`
+}
+
 // generateAbstract interacts with the Gemini API to create a story abstract.
-func generateAbstract(apiKey, modelName, thinkingLevel, instruction, language string, numChapters int) (string, int, int, float64, error) { // Updated signature
+func generateAbstract(apiKey, modelName, thinkingLevel, instruction, language string, numChapters int) (string, string, int, int, float64, error) { // Updated signature
 	// Prompt engineering for a concise abstract
 	// Dynamically include the number of chapters in the prompt
 	prompt := fmt.Sprintf(`Write a concise, compelling story writing plan.
@@ -31,12 +38,13 @@ It need to include the settings, the name of main characters and a detail plan f
 	// Add language instruction to the prompt
 	prompt += fmt.Sprintf("\nOutput the plan in %s.", language)
 
-	abstract, inputTokens, outputTokens, cost, err := utils.CallGeminiAPI(context.Background(), apiKey, modelName, prompt, thinkingLevel) // Updated call
+	// Note: We pass nil for history here as this is the initial request
+	abstract, signature, inputTokens, outputTokens, cost, err := utils.CallGeminiAPI(context.Background(), apiKey, modelName, prompt, thinkingLevel, nil) // Updated call
 	if err != nil {
-		return "", 0, 0, 0, fmt.Errorf("error generating content from Gemini: %w", err)
+		return "", "", 0, 0, 0, fmt.Errorf("error generating content from Gemini: %w", err)
 	}
 
-	return abstract, inputTokens, outputTokens, cost, nil
+	return abstract, signature, inputTokens, outputTokens, cost, nil
 }
 
 // getChapterCountFromGemini sends the abstract to Gemini to get a pure chapter count.
@@ -49,7 +57,8 @@ Do not include any other text, explanation, or formatting. Just the pure number.
 --- End Story Abstract ---
 `, abstract)
 
-	countStr, inputTokens, outputTokens, cost, err := utils.CallGeminiAPI(context.Background(), apiKey, modelName, prompt, thinkingLevel) // Updated call
+	// Note: We pass nil for history here as this is a standalone request
+	countStr, _, inputTokens, outputTokens, cost, err := utils.CallGeminiAPI(context.Background(), apiKey, modelName, prompt, thinkingLevel, nil) // Updated call
 	if err != nil {
 		return 0, 0, 0, 0, fmt.Errorf("error calling Gemini to get chapter count: %w", err)
 	}
@@ -77,7 +86,7 @@ func Execute(args []string) error {
 
 	// Define command-line flags
 	configPath := cmd.String("config", "", "Path to Gemini configuration JSON file (optional). If not provided, API key is taken from GEMINI_API_KEY env var and model defaults to 'gemini-pro'.")
-	outputPath := cmd.String("output", "", "Path to save the generated abstract file (default: abstract-yyyy-mm-dd-hh-mm-ss.txt)")
+	outputPath := cmd.String("output", "", "Path to save the generated abstract file (default: abstract-yyyy-mm-dd-hh-mm-ss.json)")
 
 	defaultInstruction := ""
 	instruction := cmd.String("instruction", defaultInstruction, "Story instruction or idea for which to generate an abstract (optional). ")
@@ -115,7 +124,7 @@ func Execute(args []string) error {
 	// --- Generate Abstract ---
 	log.Printf("Initiating abstract generation using Gemini model: %s, output language: %s, chapters: %d", modelName, *language, numChapters)
 	// Updated call to include thinkingLevel
-	abstract, inputTokensAbstract, outputTokensAbstract, costAbstract, err := generateAbstract(apiKey, modelName, thinkingLevel, *instruction, *language, numChapters)
+	abstract, signature, inputTokensAbstract, outputTokensAbstract, costAbstract, err := generateAbstract(apiKey, modelName, thinkingLevel, *instruction, *language, numChapters)
 	if err != nil {
 		return fmt.Errorf("error generating abstract: %w", err)
 	}
@@ -129,11 +138,20 @@ func Execute(args []string) error {
 	finalOutputPath := *outputPath
 	if finalOutputPath == "" {
 		timestamp := time.Now().Format("2006-01-02-15-04-05")
-		finalOutputPath = fmt.Sprintf("abstract-%s.txt", timestamp)
+		finalOutputPath = fmt.Sprintf("abstract-%s.json", timestamp)
 	}
 
-	// --- Save Abstract to File ---
-	err = os.WriteFile(finalOutputPath, []byte(abstract), 0644)
+	// --- Save Abstract and Thought Signature to JSON File ---
+	outputData := AbstractOutput{
+		Abstract:         abstract,
+		ThoughtSignature: signature,
+	}
+	jsonBytes, err := json.MarshalIndent(outputData, "", "  ")
+	if err != nil {
+		return fmt.Errorf("error marshaling abstract output to JSON: %w", err)
+	}
+
+	err = os.WriteFile(finalOutputPath, jsonBytes, 0644)
 	if err != nil {
 		return fmt.Errorf("error saving abstract to file '%s': %w", finalOutputPath, err)
 	}
