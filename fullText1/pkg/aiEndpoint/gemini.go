@@ -1,4 +1,4 @@
-package utils
+package aiEndpoint
 
 import (
 	"context"
@@ -108,6 +108,14 @@ type GeminiConfig struct {
 	ThinkingLevel string `json:"thinking_level"`
 }
 
+// GeminiConfigDetails holds configuration loaded or derived for Gemini API access.
+type GeminiConfigDetails struct {
+	APIKey        string
+	ModelName     string
+	ThinkingLevel string
+	Err           error // To propagate errors gracefully from LoadGeminiConfigWithFallback
+}
+
 // LoadGeminiConfig reads the Gemini configuration from the specified JSON file.
 // It returns a *GeminiConfig and an error. If the file is not found or unreadable,
 // it returns an error, allowing the caller to decide on fallback behavior.
@@ -127,89 +135,121 @@ func LoadGeminiConfig(configPath string) (*GeminiConfig, error) {
 
 // LoadGeminiConfigWithFallback attempts to load configuration from a file.
 // If the file is not provided or fails to load, it falls back to environment variables
-// and default model names. It returns the API key, model name, thinking level, or an error.
-func LoadGeminiConfigWithFallback(configPath string) (string, string, string, error) {
-	var apiKey string
-	var modelName string
-	var thinkingLevel string
+// and default model names. It returns GeminiConfigDetails.
+func LoadGeminiConfigWithFallback(configPath string) GeminiConfigDetails { // Changed return signature
+	var details GeminiConfigDetails
 
 	if configPath != "" {
 		geminiConfig, err := LoadGeminiConfig(configPath)
 		if err != nil {
 			log.Printf("Warning: Could not load Gemini configuration from '%s': %v. Falling back to environment variable GEMINI_API_KEY and default model '%s'.", configPath, err, DefaultGeminiModel)
-			// Fall through to environment variable logic.
-			apiKey = os.Getenv("GEMINI_API_KEY")
-			if apiKey == "" {
-				return "", "", "", fmt.Errorf("GEMINI_API_KEY environment variable is not set, and the specified config file '%s' could not be loaded or was invalid. Please set GEMINI_API_KEY or provide a valid --config file", configPath)
+			details.APIKey = os.Getenv("GEMINI_API_KEY")
+			if details.APIKey == "" {
+				details.Err = fmt.Errorf("GEMINI_API_KEY environment variable is not set, and the specified config file '%s' could not be loaded or was invalid. Please set GEMINI_API_KEY or provide a valid --config file", configPath)
+				return details
 			}
-			modelName = DefaultGeminiModel // Use the hardcoded default model
+			details.ModelName = DefaultGeminiModel
 		} else {
-			// Configuration file loaded successfully. Use values from it.
-			apiKey = geminiConfig.APIKey
-			modelName = geminiConfig.ModelName
-			thinkingLevel = geminiConfig.ThinkingLevel
+			details.APIKey = geminiConfig.APIKey
+			details.ModelName = geminiConfig.ModelName
+			details.ThinkingLevel = geminiConfig.ThinkingLevel
 
 			// If API key is missing in the config file, try environment variable as a secondary source.
-			if apiKey == "" {
+			if details.APIKey == "" {
 				log.Printf("Warning: API Key is missing in the config file '%s'. Attempting to use GEMINI_API_KEY environment variable.", configPath)
-				apiKey = os.Getenv("GEMINI_API_KEY")
-				if apiKey == "" {
-					return "", "", "", fmt.Errorf("API Key is missing in the config file and GEMINI_API_KEY environment variable is not set. Please provide an API key")
+				details.APIKey = os.Getenv("GEMINI_API_KEY")
+				if details.APIKey == "" {
+					details.Err = fmt.Errorf("API Key is missing in the config file and GEMINI_API_KEY environment variable is not set. Please provide an API key")
+					return details
 				}
 			}
 
 			// If model name is missing in the config file, use the default.
-			if modelName == "" {
+			if details.ModelName == "" {
 				log.Printf("Warning: Model name not specified in config '%s'. Using default: %s", configPath, DefaultGeminiModel)
-				modelName = DefaultGeminiModel
+				details.ModelName = DefaultGeminiModel
 			}
 		}
 	} else {
 		// No config path was provided, so directly use environment variable.
 		log.Printf("No --config file specified. Attempting to use GEMINI_API_KEY environment variable and default model '%s'.", DefaultGeminiModel)
-		apiKey = os.Getenv("GEMINI_API_KEY")
-		if apiKey == "" {
-			return "", "", "", fmt.Errorf("GEMINI_API_KEY environment variable is not set. Please set GEMINI_API_KEY or provide a valid --config file")
+		details.APIKey = os.Getenv("GEMINI_API_KEY")
+		if details.APIKey == "" {
+			details.Err = fmt.Errorf("GEMINI_API_KEY environment variable is not set. Please set GEMINI_API_KEY or provide a valid --config file")
+			return details
 		}
-		modelName = DefaultGeminiModel // Use the hardcoded default model
+		details.ModelName = DefaultGeminiModel // Use the hardcoded default model
 	}
 
 	// Final check to ensure we have an API key and model name
-	if apiKey == "" {
-		return "", "", "", fmt.Errorf("no API key found after checking config file (if provided) and environment variable. Please provide it")
+	if details.APIKey == "" {
+		details.Err = fmt.Errorf("no API key found after checking config file (if provided) and environment variable. Please provide it")
+		return details
 	}
-	if modelName == "" { // This case should theoretically be covered by the logic above, but good for robustness.
-		modelName = DefaultGeminiModel
-		log.Printf("Warning: Model name was somehow still empty, defaulting to %s.", modelName)
+	if details.ModelName == "" { // This case should theoretically be covered by the logic above, but good for robustness.
+		details.ModelName = DefaultGeminiModel
+		log.Printf("Warning: Model name was somehow still empty, defaulting to %s.", details.ModelName)
 	}
 
-	return apiKey, modelName, thinkingLevel, nil
+	return details
+}
+
+// CallGeminiAPIInput holds all input parameters for the CallGeminiAPI function.
+type CallGeminiAPIInput struct {
+	Ctx           context.Context
+	APIKey        string
+	ModelName     string
+	Prompt        string
+	ThinkingLevel string
+	PreviousTurn  *HistoryTurn
+}
+
+// GeminiAPIResponse holds all output parameters for the CallGeminiAPI function.
+type GeminiAPIResponse struct {
+	GeneratedText    string
+	ThoughtSignature []byte
+	InputTokens      int
+	OutputTokens     int
+	Cost             float64
+	Err              error // To propagate errors gracefully from the API call
+}
+
+// ChapterCountResult holds the result of chapter count operations.
+type ChapterCountResult struct {
+	Count        int
+	InputTokens  int
+	OutputTokens int
+	Cost         float64
+	Err          error // To propagate errors gracefully
 }
 
 // CallGeminiAPI sends a prompt to the Gemini API and returns the generated text, thought signature,
 // along with the input and output token counts, and the calculated cost.
 // It supports an optional thinkingLevel and previous conversation history for thought chain continuity.
-func CallGeminiAPI(ctx context.Context, apiKey, modelName, prompt, thinkingLevel string, previousTurn *HistoryTurn) (string, []byte, int, int, float64, error) { // Updated signature
-	log.Printf("Gemini API Call: Initiating call to model '%s'. Thinking Level: '%s'. Prompt length: %d characters.", modelName, thinkingLevel, len(prompt))
+func CallGeminiAPI(input CallGeminiAPIInput) GeminiAPIResponse { // Updated signature
+	log.Printf("Gemini API Call: Initiating call to model '%s'. Thinking Level: '%s'. Prompt length: %d characters.", input.ModelName, input.ThinkingLevel, len(input.Prompt))
 
-	client, err := genai.NewClient(ctx, &genai.ClientConfig{APIKey: apiKey})
+	var response GeminiAPIResponse
+
+	client, err := genai.NewClient(input.Ctx, &genai.ClientConfig{APIKey: input.APIKey})
 	if err != nil {
-		return "", nil, 0, 0, 0, fmt.Errorf("error creating Gemini client: %w", err)
+		response.Err = fmt.Errorf("error creating Gemini client: %w", err)
+		return response
 	}
 
 	// Construct request contents, potentially including history
 	var reqContents []*genai.Content
 
-	if previousTurn != nil {
+	if input.PreviousTurn != nil {
 		reqContents = append(reqContents, &genai.Content{
 			Role:  "user",
-			Parts: []*genai.Part{{Text: previousTurn.UserPrompt}},
+			Parts: []*genai.Part{{Text: input.PreviousTurn.UserPrompt}},
 		})
 		reqContents = append(reqContents, &genai.Content{
 			Role: "model",
 			Parts: []*genai.Part{{
-				Text:             previousTurn.ModelResponse,
-				ThoughtSignature: previousTurn.ThoughtSignature,
+				Text:             input.PreviousTurn.ModelResponse,
+				ThoughtSignature: input.PreviousTurn.ThoughtSignature,
 			}},
 		})
 	}
@@ -217,16 +257,16 @@ func CallGeminiAPI(ctx context.Context, apiKey, modelName, prompt, thinkingLevel
 	// Add current prompt
 	reqContents = append(reqContents, &genai.Content{
 		Role:  "user",
-		Parts: []*genai.Part{{Text: prompt}},
+		Parts: []*genai.Part{{Text: input.Prompt}},
 	})
 
 	var genConfig *genai.GenerateContentConfig
 
-	if modelName == "gemini-3-pro-preview" && thinkingLevel != "" {
+	if input.ModelName == "gemini-3-pro-preview" && input.ThinkingLevel != "" {
 		// If thinking level is set for the supported model, use it and do NOT set thinking budget.
 		genConfig = &genai.GenerateContentConfig{
 			ThinkingConfig: &genai.ThinkingConfig{
-				ThinkingLevel: genai.ThinkingLevel(thinkingLevel),
+				ThinkingLevel: genai.ThinkingLevel(input.ThinkingLevel),
 			},
 		}
 	} else {
@@ -256,36 +296,27 @@ func CallGeminiAPI(ctx context.Context, apiKey, modelName, prompt, thinkingLevel
 	}
 	// --- End Log Request Body ---
 
-	// For token counting, we only count the input parts.
-	// We need to construct a similar structure for CountTokens if possible, or just estimate.
-	// For simplicity and accuracy with the SDK, we'll try to count the constructed contents.
-	// Note: Client.Models.CountTokens expects a list of contents if passing complex history,
-	// but the Go SDK signature takes `...*Content` or similar? Check SDK.
-	// genai.CountTokensConfig usually takes the same arguments as GenerateContent.
-	// Since CountTokens signature might differ slightly in how it accepts parts vs content list,
-	// we will try to pass the same content structure.
-
 	// First, count input tokens to determine pricing tier
-	countResp, err := client.Models.CountTokens(ctx, modelName, reqContents, &genai.CountTokensConfig{})
+	countResp, err := client.Models.CountTokens(input.Ctx, input.ModelName, reqContents, &genai.CountTokensConfig{})
 	if err != nil {
 		log.Printf("Warning: Failed to count input tokens for prompt: %v. Proceeding with generation and assuming 0 input tokens for cost calculation.", err)
 		// Don't return error here, proceed with generation but log 0 for input tokens
 	}
-	inputTokens := 0
+	response.InputTokens = 0
 	if countResp != nil {
-		inputTokens = int(countResp.TotalTokens)
+		response.InputTokens = int(countResp.TotalTokens)
 	}
-	log.Printf("Gemini API Call: Input token count: %d", inputTokens)
+	log.Printf("Gemini API Call: Input token count: %d", response.InputTokens)
 
 	// Get model prices based on model name and input tokens
-	modelPrices, err := GetModelPrices(modelName, inputTokens)
+	modelPrices, err := GetModelPrices(input.ModelName, response.InputTokens)
 	if err != nil {
-		log.Printf("Warning: Could not get pricing for model '%s': %v. Cost will be reported as 0.", modelName, err)
+		log.Printf("Warning: Could not get pricing for model '%s': %v. Cost will be reported as 0.", input.ModelName, err)
 		modelPrices = &ModelPrices{} // Default to zero prices if not found
 	}
 
 	// Generate content
-	resp, err := client.Models.GenerateContent(ctx, modelName, reqContents, genConfig)
+	resp, err := client.Models.GenerateContent(input.Ctx, input.ModelName, reqContents, genConfig)
 
 	// --- Log Response Body ---
 	if resp != nil {
@@ -306,32 +337,33 @@ func CallGeminiAPI(ctx context.Context, apiKey, modelName, prompt, thinkingLevel
 
 	if err != nil {
 		log.Printf("Gemini API Call: Error generating content: %v", err)
-		return "", nil, inputTokens, 0, 0, fmt.Errorf("error generating content from Gemini: %w", err)
+		response.Err = fmt.Errorf("error generating content from Gemini: %w", err)
+		return response
 	}
 
 	if len(resp.Candidates) == 0 || resp.Candidates[0].Content == nil || len(resp.Candidates[0].Content.Parts) == 0 {
 		log.Printf("Gemini API Call: No content generated for the given instruction.")
-		return "", nil, inputTokens, 0, 0, fmt.Errorf("no content generated from Gemini for the given instruction")
+		response.Err = fmt.Errorf("no content generated from Gemini for the given instruction")
+		return response
 	}
 
-	generatedText := resp.Text()
-	var thoughtSignature []byte
+	response.GeneratedText = resp.Text()
 	if len(resp.Candidates) > 0 && len(resp.Candidates[0].Content.Parts) > 0 {
-		thoughtSignature = resp.Candidates[0].Content.Parts[0].ThoughtSignature
+		response.ThoughtSignature = resp.Candidates[0].Content.Parts[0].ThoughtSignature
 	}
 
-	outputTokens := 0
+	response.OutputTokens = 0
 	if resp.UsageMetadata != nil {
-		outputTokens = int(resp.UsageMetadata.CandidatesTokenCount)
+		response.OutputTokens = int(resp.UsageMetadata.CandidatesTokenCount)
 	} else {
 		log.Println("failed to count output token, output tokens will be 0 for cost calculation.")
 	}
 
 	// Calculate cost
-	cost := (float64(inputTokens)/TokensPerMillion)*modelPrices.InputPricePerMillion +
-		(float64(outputTokens)/TokensPerMillion)*modelPrices.OutputPricePerMillion
+	response.Cost = (float64(response.InputTokens)/TokensPerMillion)*modelPrices.InputPricePerMillion +
+		(float64(response.OutputTokens)/TokensPerMillion)*modelPrices.OutputPricePerMillion
 
-	log.Printf("Gemini API Call: Call to model '%s' completed. Input tokens: %d, Output tokens: %d, Cost: $%.6f", modelName, inputTokens, outputTokens, cost)
+	log.Printf("Gemini API Call: Call to model '%s' completed. Input tokens: %d, Output tokens: %d, Cost: $%.6f", input.ModelName, response.InputTokens, response.OutputTokens, response.Cost)
 
-	return generatedText, thoughtSignature, inputTokens, outputTokens, cost, nil
+	return response
 }

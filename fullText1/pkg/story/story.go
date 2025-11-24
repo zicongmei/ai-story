@@ -15,11 +15,21 @@ import (
 
 	"gopkg.in/yaml.v3" // New import for YAML parsing
 
-	"github.com/zicongmei/ai-story/fullText1/pkg/utils"
+	"github.com/zicongmei/ai-story/fullText1/pkg/aiEndpoint"
 )
 
+// GetChapterCountForStoryInput holds input parameters for getChapterCountFromGeminiForStory.
+type GetChapterCountForStoryInput struct {
+	APIKey        string
+	ModelName     string
+	ThinkingLevel string
+	Abstract      string
+}
+
 // getChapterCountFromGeminiForStory sends the abstract to Gemini to get a pure chapter count for story generation.
-func getChapterCountFromGeminiForStory(apiKey, modelName, thinkingLevel, abstract string) (int, int, int, float64, error) { // Updated signature
+func getChapterCountFromGeminiForStory(input GetChapterCountForStoryInput) aiEndpoint.ChapterCountResult { // Updated signature
+	var result aiEndpoint.ChapterCountResult
+
 	prompt := fmt.Sprintf(`Given the following complete story abstract (plan), please return ONLY the total number of chapters planned within it.
 Do not include any other text, explanation, or formatting. Just the pure number.
 If no chapters are explicitly outlined, return 0.
@@ -27,29 +37,54 @@ If no chapters are explicitly outlined, return 0.
 --- Story Abstract ---
 %s
 --- End Story Abstract ---
-`, abstract)
+`, input.Abstract)
 
-	// Note: We pass nil for history here as this is a standalone request
-	countStr, _, inputTokens, outputTokens, cost, err := utils.CallGeminiAPI(context.Background(), apiKey, modelName, prompt, thinkingLevel, nil) // Updated call
-	if err != nil {
-		return 0, 0, 0, 0, fmt.Errorf("error calling Gemini to get chapter count for story: %w", err)
+	apiInput := aiEndpoint.CallGeminiAPIInput{
+		Ctx:           context.Background(),
+		APIKey:        input.APIKey,
+		ModelName:     input.ModelName,
+		Prompt:        prompt,
+		ThinkingLevel: input.ThinkingLevel,
+		PreviousTurn:  nil,
+	}
+	apiResponse := aiEndpoint.CallGeminiAPI(apiInput)
+
+	if apiResponse.Err != nil {
+		result.Err = fmt.Errorf("error calling Gemini to get chapter count for story: %w", apiResponse.Err)
+		return result
 	}
 
-	// Clean up the response to ensure it's a pure number
-	countStr = strings.TrimSpace(countStr)
-	// Take only the first line in case Gemini adds extra text after the number
+	countStr := strings.TrimSpace(apiResponse.GeneratedText)
 	countStr = strings.Split(countStr, "\n")[0]
 
 	count, err := strconv.Atoi(countStr)
 	if err != nil {
-		return 0, inputTokens, outputTokens, cost, fmt.Errorf("could not parse chapter count '%s' from Gemini response for story: %w", countStr, err)
+		result.InputTokens = apiResponse.InputTokens
+		result.OutputTokens = apiResponse.OutputTokens
+		result.Cost = apiResponse.Cost
+		result.Err = fmt.Errorf("could not parse chapter count '%s' from Gemini response for story: %w", countStr, err)
+		return result
 	}
 
-	return count, inputTokens, outputTokens, cost, nil
+	result.Count = count
+	result.InputTokens = apiResponse.InputTokens
+	result.OutputTokens = apiResponse.OutputTokens
+	result.Cost = apiResponse.Cost
+	return result
+}
+
+// GetWrittenChapterCountInput holds input parameters for getWrittenChapterCountFromGemini.
+type GetWrittenChapterCountInput struct {
+	APIKey               string
+	ModelName            string
+	ThinkingLevel        string
+	ExistingStoryContent string
 }
 
 // getWrittenChapterCountFromGemini sends the existing story content to Gemini to identify the last fully written chapter.
-func getWrittenChapterCountFromGemini(apiKey, modelName, thinkingLevel, existingStoryContent string) (int, int, int, float64, error) { // Updated signature
+func getWrittenChapterCountFromGemini(input GetWrittenChapterCountInput) aiEndpoint.ChapterCountResult { // Updated signature
+	var result aiEndpoint.ChapterCountResult
+
 	prompt := fmt.Sprintf(`Given the following story text, identify the number of the last *fully written* chapter.
 Look for chapter headers like '## Chapter X' (where X is the chapter number).
 Return ONLY the number.
@@ -59,23 +94,40 @@ Do not include any other text, explanation, or formatting. Just the pure integer
 --- Existing Story Content ---
 %s
 --- End Existing Story Content ---
-`, existingStoryContent)
+`, input.ExistingStoryContent)
 
-	// Note: We pass nil for history here as this is a standalone request
-	countStr, _, inputTokens, outputTokens, cost, err := utils.CallGeminiAPI(context.Background(), apiKey, modelName, prompt, thinkingLevel, nil) // Updated call
-	if err != nil {
-		return 0, 0, 0, 0, fmt.Errorf("error calling Gemini to get written chapter count: %w", err)
+	apiInput := aiEndpoint.CallGeminiAPIInput{
+		Ctx:           context.Background(),
+		APIKey:        input.APIKey,
+		ModelName:     input.ModelName,
+		Prompt:        prompt,
+		ThinkingLevel: input.ThinkingLevel,
+		PreviousTurn:  nil,
+	}
+	apiResponse := aiEndpoint.CallGeminiAPI(apiInput)
+
+	if apiResponse.Err != nil {
+		result.Err = fmt.Errorf("error calling Gemini to get written chapter count: %w", apiResponse.Err)
+		return result
 	}
 
-	countStr = strings.TrimSpace(countStr)
-	countStr = strings.Split(countStr, "\n")[0] // Take only the first line
+	countStr := strings.TrimSpace(apiResponse.GeneratedText)
+	countStr = strings.Split(countStr, "\n")[0]
 
 	count, err := strconv.Atoi(countStr)
 	if err != nil {
-		return 0, inputTokens, outputTokens, cost, fmt.Errorf("could not parse written chapter count '%s' from Gemini response: %w", countStr, err)
+		result.InputTokens = apiResponse.InputTokens
+		result.OutputTokens = apiResponse.OutputTokens
+		result.Cost = apiResponse.Cost
+		result.Err = fmt.Errorf("could not parse written chapter count '%s' from Gemini response: %w", countStr, err)
+		return result
 	}
 
-	return count, inputTokens, outputTokens, cost, nil
+	result.Count = count
+	result.InputTokens = apiResponse.InputTokens
+	result.OutputTokens = apiResponse.OutputTokens
+	result.Cost = apiResponse.Cost
+	return result
 }
 
 // Execute is the main entry point for the 'story' subcommand.
@@ -140,10 +192,13 @@ func Execute(args []string) error {
 	// --- End logging configuration ---
 
 	// Load Gemini config using the utility function
-	apiKey, modelName, thinkingLevel, err := utils.LoadGeminiConfigWithFallback(*configPath) // Updated to receive thinkingLevel
-	if err != nil {
-		return err // utils.LoadGeminiConfigWithFallback already logs detailed errors.
+	geminiConfigDetails := aiEndpoint.LoadGeminiConfigWithFallback(*configPath) // Updated call
+	if geminiConfigDetails.Err != nil {
+		return geminiConfigDetails.Err
 	}
+	apiKey := geminiConfigDetails.APIKey
+	modelName := geminiConfigDetails.ModelName
+	thinkingLevel := geminiConfigDetails.ThinkingLevel
 
 	// Read abstract file
 	abstractContentBytes, err := os.ReadFile(*abstractFilePath)
@@ -187,11 +242,21 @@ func Execute(args []string) error {
 
 	// Get total chapter count from Gemini based on the abstract plan
 	log.Printf("Sending abstract to Gemini to get the total number of chapters planned...")
-	totalChapters, inputTokensCountPlan, outputTokensCountPlan, costCountPlan, err := getChapterCountFromGeminiForStory(apiKey, modelName, thinkingLevel, abstractContent) // Updated call
-	if err != nil {
-		return fmt.Errorf("failed to get total chapter count from Gemini for story generation: %w", err)
+	getChapterCountForStoryInput := GetChapterCountForStoryInput{
+		APIKey:        apiKey,
+		ModelName:     modelName,
+		ThinkingLevel: thinkingLevel,
+		Abstract:      abstractContent,
 	}
-	log.Printf("Chapter plan determination complete. Input tokens: %d, Output tokens: %d, Cost: $%.6f", inputTokensCountPlan, outputTokensCountPlan, costCountPlan)
+	chapterCountPlanResult := getChapterCountFromGeminiForStory(getChapterCountForStoryInput) // Updated call
+	if chapterCountPlanResult.Err != nil {
+		return fmt.Errorf("failed to get total chapter count from Gemini for story generation: %w", chapterCountPlanResult.Err)
+	}
+	totalChapters := chapterCountPlanResult.Count
+	accumulatedInputTokens := chapterCountPlanResult.InputTokens // Initialize with this call's tokens
+	accumulatedOutputTokens := chapterCountPlanResult.OutputTokens
+	accumulatedCost := chapterCountPlanResult.Cost
+	log.Printf("Chapter plan determination complete. Input tokens: %d, Output tokens: %d, Cost: $%.6f", chapterCountPlanResult.InputTokens, chapterCountPlanResult.OutputTokens, chapterCountPlanResult.Cost)
 
 	if totalChapters == 0 {
 		return fmt.Errorf("Gemini returned 0 planned chapters for the abstract. Cannot proceed with story generation.")
@@ -221,9 +286,6 @@ func Execute(args []string) error {
 	var existingStoryContent string = ""
 	var fileMode int // Will be set to os.O_CREATE|os.O_WRONLY or os.O_APPEND|os.O_WRONLY
 	var firstNewChapter int = 1
-	var accumulatedInputTokens = inputTokensCountPlan
-	var accumulatedOutputTokens = outputTokensCountPlan
-	var accumulatedCost = costCountPlan
 
 	// Check if output file already exists to determine resume point
 	if _, err := os.Stat(finalOutputPath); err == nil {
@@ -234,17 +296,23 @@ func Execute(args []string) error {
 			fileMode = os.O_CREATE | os.O_WRONLY
 		} else {
 			existingStoryContent = string(contentBytes)
-			// Ask Gemini to count chapters in the existing content
-			count, inputToks, outputToks, costToks, chapterCountErr := getWrittenChapterCountFromGemini(apiKey, modelName, thinkingLevel, existingStoryContent) // Updated call
-			accumulatedInputTokens += inputToks
-			accumulatedOutputTokens += outputToks
-			accumulatedCost += costToks
+			log.Printf("Sending existing content to Gemini to identify written chapters for resume...")
+			getWrittenChapterCountInput := GetWrittenChapterCountInput{
+				APIKey:               apiKey,
+				ModelName:            modelName,
+				ThinkingLevel:        thinkingLevel,
+				ExistingStoryContent: existingStoryContent,
+			}
+			writtenChapterCountResult := getWrittenChapterCountFromGemini(getWrittenChapterCountInput) // Updated call
+			accumulatedInputTokens += writtenChapterCountResult.InputTokens
+			accumulatedOutputTokens += writtenChapterCountResult.OutputTokens
+			accumulatedCost += writtenChapterCountResult.Cost
 
-			if chapterCountErr != nil {
-				log.Printf("Warning: Failed to get written chapter count from Gemini for existing file: %v. Assuming 0 chapters written and starting from Chapter 1 (will overwrite if abstract/header is incomplete).", chapterCountErr)
+			if writtenChapterCountResult.Err != nil {
+				log.Printf("Warning: Failed to get written chapter count from Gemini for existing file: %v. Assuming 0 chapters written and starting from Chapter 1 (will overwrite if abstract/header is incomplete).", writtenChapterCountResult.Err)
 				fileMode = os.O_CREATE | os.O_WRONLY
 			} else {
-				chaptersAlreadyWritten = count
+				chaptersAlreadyWritten = writtenChapterCountResult.Count
 				if chaptersAlreadyWritten > 0 {
 					firstNewChapter = chaptersAlreadyWritten + 1
 					fileMode = os.O_APPEND | os.O_WRONLY // Open in append mode
@@ -279,7 +347,7 @@ func Execute(args []string) error {
 	previousChapters := existingStoryContent
 
 	// Track the history turn from the previous chapter generation for use in the next
-	var currentHistory *utils.HistoryTurn = nil
+	var currentHistory *aiEndpoint.HistoryTurn = nil
 
 	// Generate story chapter by chapter, starting from 'firstNewChapter'
 	log.Printf("Starting full story generation from Chapter %d to Chapter %d, aiming for %d words per chapter...", firstNewChapter, totalChapters, *wordsPerChapter)
@@ -324,8 +392,23 @@ Write Chapter %d now, ensuring it flows logically from previous chapters and adh
 				time.Sleep(2 * time.Second) // Small delay before retrying
 			}
 
-			// Updated call to include thinkingLevel and history
-			chapterText, chapterSignature, chapterInputTokens, chapterOutputTokens, chapterCost, chapterGenerationErr = utils.CallGeminiAPI(context.Background(), apiKey, modelName, prompt, thinkingLevel, currentHistory)
+			apiInput := aiEndpoint.CallGeminiAPIInput{
+				Ctx:           context.Background(),
+				APIKey:        apiKey,
+				ModelName:     modelName,
+				Prompt:        prompt,
+				ThinkingLevel: thinkingLevel,
+				PreviousTurn:  currentHistory,
+			}
+			apiResponse := aiEndpoint.CallGeminiAPI(apiInput) // Updated call
+
+			chapterText = apiResponse.GeneratedText
+			chapterSignature = apiResponse.ThoughtSignature
+			chapterInputTokens = apiResponse.InputTokens
+			chapterOutputTokens = apiResponse.OutputTokens
+			chapterCost = apiResponse.Cost
+			chapterGenerationErr = apiResponse.Err
+
 			if chapterGenerationErr == nil {
 				// Success, break out of retry loop
 				break
@@ -334,7 +417,12 @@ Write Chapter %d now, ensuring it flows logically from previous chapters and adh
 
 		if chapterGenerationErr != nil {
 			log.Fatalf("Critical Error: Failed to generate Chapter %d after %d attempts: %v. Marking chapter with error message and proceeding.", chapterNum, maxChapterRetries+1, chapterGenerationErr)
-
+			// If all retries fail, mark the chapter with an error message in the output.
+			chapterText = fmt.Sprintf("Error generating Chapter %d: %v\n\n[Generation Failed - Please review logs]", chapterNum, chapterGenerationErr)
+			chapterSignature = nil // Clear signature if generation failed
+			chapterInputTokens = 0
+			chapterOutputTokens = 0
+			chapterCost = 0
 		}
 
 		// Accumulate token counts and cost
@@ -360,7 +448,7 @@ Write Chapter %d now, ensuring it flows logically from previous chapters and adh
 		previousChapters += chapterHeader + chapterContentToWrite
 
 		// Update the history for the next iteration to maintain the thought signature chain
-		currentHistory = &utils.HistoryTurn{
+		currentHistory = &aiEndpoint.HistoryTurn{
 			UserPrompt:       prompt,
 			ModelResponse:    chapterText,
 			ThoughtSignature: chapterSignature,

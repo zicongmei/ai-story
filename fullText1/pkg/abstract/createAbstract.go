@@ -13,7 +13,7 @@ import (
 
 	"gopkg.in/yaml.v3" // New import for YAML output
 
-	"github.com/zicongmei/ai-story/fullText1/pkg/utils"
+	"github.com/zicongmei/ai-story/fullText1/pkg/aiEndpoint"
 )
 
 // AbstractOutput structure for YAML output
@@ -22,59 +22,123 @@ type AbstractOutput struct {
 	ThoughtSignature []byte `json:"thought_signature"`
 }
 
+// GenerateAbstractInput holds all input parameters for the generateAbstract function.
+type GenerateAbstractInput struct {
+	APIKey        string
+	ModelName     string
+	ThinkingLevel string
+	Instruction   string
+	Language      string
+	NumChapters   int
+}
+
+// AbstractGenerationResult holds all output parameters for the generateAbstract function.
+type AbstractGenerationResult struct {
+	Abstract         string
+	ThoughtSignature []byte
+	InputTokens      int
+	OutputTokens     int
+	Cost             float64
+	Err              error // To propagate errors gracefully
+}
+
 // generateAbstract interacts with the Gemini API to create a story abstract.
-func generateAbstract(apiKey, modelName, thinkingLevel, instruction, language string, numChapters int) (string, []byte, int, int, float64, error) { // Updated signature
+func generateAbstract(input GenerateAbstractInput) AbstractGenerationResult { // Updated signature
+	var result AbstractGenerationResult
+
 	// Prompt engineering for a concise abstract
 	// Dynamically include the number of chapters in the prompt
 	prompt := fmt.Sprintf(`Write a concise, compelling story writing plan.
 It need to include the settings, the name of main characters and a detail plan for all %d chapters.
-	`, numChapters)
+	`, input.NumChapters)
 
-	if instruction != "" {
-		prompt += "\nStory Idea: " + instruction
+	if input.Instruction != "" {
+		prompt += "\nStory Idea: " + input.Instruction
 	} else {
 		prompt += " Create a detailed story idea."
 	}
 
 	// Add language instruction to the prompt
-	prompt += fmt.Sprintf("\nOutput the plan in %s.", language)
+	prompt += fmt.Sprintf("\nOutput the plan in %s.", input.Language)
 
-	// Note: We pass nil for history here as this is the initial request
-	abstract, signature, inputTokens, outputTokens, cost, err := utils.CallGeminiAPI(context.Background(), apiKey, modelName, prompt, thinkingLevel, nil) // Updated call
-	if err != nil {
-		return "", nil, 0, 0, 0, fmt.Errorf("error generating content from Gemini: %w", err)
+	apiInput := aiEndpoint.CallGeminiAPIInput{
+		Ctx:           context.Background(),
+		APIKey:        input.APIKey,
+		ModelName:     input.ModelName,
+		Prompt:        prompt,
+		ThinkingLevel: input.ThinkingLevel,
+		PreviousTurn:  nil,
+	}
+	apiResponse := aiEndpoint.CallGeminiAPI(apiInput)
+
+	if apiResponse.Err != nil {
+		result.Err = fmt.Errorf("error generating content from Gemini: %w", apiResponse.Err)
+		return result
 	}
 
-	return abstract, signature, inputTokens, outputTokens, cost, nil
+	result.Abstract = apiResponse.GeneratedText
+	result.ThoughtSignature = apiResponse.ThoughtSignature
+	result.InputTokens = apiResponse.InputTokens
+	result.OutputTokens = apiResponse.OutputTokens
+	result.Cost = apiResponse.Cost
+	return result
+}
+
+// GetChapterCountInput holds all input parameters for the getChapterCountFromGemini function.
+// This is specific to the abstract subcommand's chapter count check.
+type GetChapterCountInput struct {
+	APIKey        string
+	ModelName     string
+	ThinkingLevel string
+	Abstract      string
 }
 
 // getChapterCountFromGemini sends the abstract to Gemini to get a pure chapter count.
-func getChapterCountFromGemini(apiKey, modelName, thinkingLevel, abstract string) (int, int, int, float64, error) { // Updated signature
+func getChapterCountFromGemini(input GetChapterCountInput) aiEndpoint.ChapterCountResult { // Updated signature, uses aiEndpoint.ChapterCountResult
+	var result aiEndpoint.ChapterCountResult
+
 	prompt := fmt.Sprintf(`Given the following complete story abstract (plan), please return ONLY the total number of chapters planned within it.
 Do not include any other text, explanation, or formatting. Just the pure number.
 
 --- Story Abstract ---
 %s
 --- End Story Abstract ---
-`, abstract)
+`, input.Abstract)
 
-	// Note: We pass nil for history here as this is a standalone request
-	countStr, _, inputTokens, outputTokens, cost, err := utils.CallGeminiAPI(context.Background(), apiKey, modelName, prompt, thinkingLevel, nil) // Updated call
-	if err != nil {
-		return 0, 0, 0, 0, fmt.Errorf("error calling Gemini to get chapter count: %w", err)
+	apiInput := aiEndpoint.CallGeminiAPIInput{
+		Ctx:           context.Background(),
+		APIKey:        input.APIKey,
+		ModelName:     input.ModelName,
+		Prompt:        prompt,
+		ThinkingLevel: input.ThinkingLevel,
+		PreviousTurn:  nil,
+	}
+	apiResponse := aiEndpoint.CallGeminiAPI(apiInput)
+
+	if apiResponse.Err != nil {
+		result.Err = fmt.Errorf("error calling Gemini to get chapter count: %w", apiResponse.Err)
+		return result
 	}
 
 	// Clean up the response to ensure it's a pure number
-	countStr = strings.TrimSpace(countStr)
+	countStr := strings.TrimSpace(apiResponse.GeneratedText)
 	// Take only the first line in case Gemini adds extra text after the number
 	countStr = strings.Split(countStr, "\n")[0]
 
 	count, err := strconv.Atoi(countStr)
 	if err != nil {
-		return 0, inputTokens, outputTokens, cost, fmt.Errorf("could not parse chapter count '%s' from Gemini response: %w", countStr, err)
+		result.InputTokens = apiResponse.InputTokens
+		result.OutputTokens = apiResponse.OutputTokens
+		result.Cost = apiResponse.Cost
+		result.Err = fmt.Errorf("could not parse chapter count '%s' from Gemini response: %w", countStr, err)
+		return result
 	}
 
-	return count, inputTokens, outputTokens, cost, nil
+	result.Count = count
+	result.InputTokens = apiResponse.InputTokens
+	result.OutputTokens = apiResponse.OutputTokens
+	result.Cost = apiResponse.Cost
+	return result
 }
 
 // Execute is the main entry point for the 'abstract' subcommand.
@@ -101,10 +165,13 @@ func Execute(args []string) error {
 	}
 
 	// Load Gemini config using the utility function
-	apiKey, modelName, thinkingLevel, err := utils.LoadGeminiConfigWithFallback(*configPath) // Updated to receive thinkingLevel
-	if err != nil {
-		return err // utils.LoadGeminiConfigWithFallback already logs detailed errors.
+	geminiConfigDetails := aiEndpoint.LoadGeminiConfigWithFallback(*configPath) // Updated call
+	if geminiConfigDetails.Err != nil {
+		return geminiConfigDetails.Err // aiEndpoint.LoadGeminiConfigWithFallback already logs detailed errors.
 	}
+	apiKey := geminiConfigDetails.APIKey
+	modelName := geminiConfigDetails.ModelName
+	thinkingLevel := geminiConfigDetails.ThinkingLevel
 
 	// Determine number of chapters for the *initial* abstract generation
 	numChapters := *chapters
@@ -124,15 +191,24 @@ func Execute(args []string) error {
 
 	// --- Generate Abstract ---
 	log.Printf("Initiating abstract generation using Gemini model: %s, output language: %s, chapters: %d", modelName, *language, numChapters)
-	// Updated call to include thinkingLevel
-	abstract, signature, inputTokensAbstract, outputTokensAbstract, costAbstract, err := generateAbstract(apiKey, modelName, thinkingLevel, *instruction, *language, numChapters)
-	if err != nil {
-		return fmt.Errorf("error generating abstract: %w", err)
+	generateAbstractInput := GenerateAbstractInput{
+		APIKey:        apiKey,
+		ModelName:     modelName,
+		ThinkingLevel: thinkingLevel,
+		Instruction:   *instruction,
+		Language:      *language,
+		NumChapters:   numChapters,
 	}
-	accumulatedInputTokens += inputTokensAbstract
-	accumulatedOutputTokens += outputTokensAbstract
-	accumulatedCost += costAbstract
-	log.Printf("Abstract generation complete. Input tokens: %d, Output tokens: %d, Cost: $%.6f", inputTokensAbstract, outputTokensAbstract, costAbstract)
+	abstractResult := generateAbstract(generateAbstractInput) // Updated call
+	if abstractResult.Err != nil {
+		return fmt.Errorf("error generating abstract: %w", abstractResult.Err)
+	}
+	abstract := abstractResult.Abstract
+	signature := abstractResult.ThoughtSignature
+	accumulatedInputTokens += abstractResult.InputTokens
+	accumulatedOutputTokens += abstractResult.OutputTokens
+	accumulatedCost += abstractResult.Cost
+	log.Printf("Abstract generation complete. Input tokens: %d, Output tokens: %d, Cost: $%.6f", abstractResult.InputTokens, abstractResult.OutputTokens, abstractResult.Cost)
 
 	// --- Determine Output Path ---
 	finalOutputPath := *outputPath
@@ -161,16 +237,21 @@ func Execute(args []string) error {
 
 	// --- New Step: Get pure chapter count from Gemini ---
 	log.Printf("Sending abstract to Gemini to get pure chapter count...")
-	// Updated call to include thinkingLevel
-	pureChapterCount, inputTokensCount, outputTokensCount, costCount, err := getChapterCountFromGemini(apiKey, modelName, thinkingLevel, abstract)
-	if err != nil {
-		log.Printf("Warning: Failed to get pure chapter count from Gemini: %v. Proceeding without this information.", err)
+	getChapterCountInput := GetChapterCountInput{
+		APIKey:        apiKey,
+		ModelName:     modelName,
+		ThinkingLevel: thinkingLevel,
+		Abstract:      abstract,
+	}
+	chapterCountResult := getChapterCountFromGemini(getChapterCountInput) // Updated call
+	if chapterCountResult.Err != nil {
+		log.Printf("Warning: Failed to get pure chapter count from Gemini: %v. Proceeding without this information.", chapterCountResult.Err)
 	} else {
-		accumulatedInputTokens += inputTokensCount
-		accumulatedOutputTokens += outputTokensCount
-		accumulatedCost += costCount
-		fmt.Printf("Pure chapter count from Gemini: %d\n", pureChapterCount)
-		log.Printf("Pure chapter count from Gemini: %d. Input tokens: %d, Output tokens: %d, Cost: $%.6f", pureChapterCount, inputTokensCount, outputTokensCount, costCount)
+		accumulatedInputTokens += chapterCountResult.InputTokens
+		accumulatedOutputTokens += chapterCountResult.OutputTokens
+		accumulatedCost += chapterCountResult.Cost
+		fmt.Printf("Pure chapter count from Gemini: %d\n", chapterCountResult.Count)
+		log.Printf("Pure chapter count from Gemini: %d. Input tokens: %d, Output tokens: %d, Cost: $%.6f", chapterCountResult.Count, chapterCountResult.InputTokens, chapterCountResult.OutputTokens, chapterCountResult.Cost)
 	}
 
 	fmt.Printf("Total accumulated cost for abstract generation process: $%.6f\n", accumulatedCost)

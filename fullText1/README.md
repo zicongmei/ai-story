@@ -11,7 +11,7 @@ This Go program provides a command-line interface to interact with the Google Ge
 *   **Detailed Token and Cost Logging:** Logs input and output token counts and estimated cost for every Gemini API call. For story generation, it also logs accumulated input and output token counts and total estimated cost across all chapter generations.
 *   **API Request/Response Logging:** For each Gemini API call, the full request and response bodies (in JSON format) are saved to uniquely named files in the system's temporary directory (e.g., `/tmp/gemini_req_TIMESTAMP.json`, `/tmp/gemini_resp_TIMESTAMP.json`). The paths to these files are logged for easy debugging.
 *   **Story Generation from Abstract:** The `story` subcommand takes an abstract and generates the full text, chapter by chapter, adhering to a specified word count per chapter, **sending the entire abstract to the AI as context for each chapter generation**. Each generated chapter is immediately appended to the output file.
-*   **Robust Chapter Generation:** When generating individual story chapters, if `utils.CallGeminiAPI` encounters an error, the program will automatically **retry up to 3 times** to regenerate that chapter before marking it with an error message and continuing. This improves resilience against transient API issues.
+*   **Robust Chapter Generation:** When generating individual story chapters, if `aiEndpoint.CallGeminiAPI` encounters an error, the program will automatically **retry up to 3 times** to regenerate that chapter before marking it with an error message and continuing. This improves resilience against transient API issues.
 *   **Resume Generation:** If the `--output` file already exists, the program will send its content to Gemini to identify the number of previously written chapters. Generation will then resume from the next missing chapter. The full content of the existing file (including abstract and previously written chapters) is sent as context for the first new chapter, and subsequent newly generated chapters are appended to this context for continuous flow.
 *   **Dedicated Log File for Story Generation:** When running the `story` subcommand, a separate log file will be created. If the `--abstract-file` is named `abstract-YYYY-MM-DD-HH-MM-SS.yaml`, the log will be saved as `log-YYYY-MM-DD-HH-MM-SS.log` in the current directory. All `log.Printf` and `log.Fatalf` messages from the `story` subcommand will be written to this file in addition to `stderr`.
 *   **Default Settings:** Sensible defaults for output file name (`abstract-yyyy-mm-dd-hh-mm-ss.yaml` or `fulltext-yyyy-mm-dd-hh-mm-ss.txt`). No default configuration file is assumed; if `--config` is not used, environment variables are checked.
@@ -27,11 +27,11 @@ This Go program provides a command-line interface to interact with the Google Ge
     ```bash
     mkdir -p /usr/local/google/home/zicong/code/src/github.com/zicongmei/ai-story/fullText1/pkg/abstract
     mkdir -p /usr/local/google/home/zicong/code/src/github.com/zicongmei/ai-story/fullText1/pkg/story
-    mkdir -p /usr/local/google/home/zicong/code/src/github.com/zicongmei/ai-story/fullText1/pkg/utils
+    mkdir -p /usr/local/google/home/zicong/code/src/github.com/zicongmei/ai-story/fullText1/pkg/aiEndpoint
     # Place main.go in /usr/local/google/home/zicong/code/src/github.com/zicongmei/ai-story/fullText1/
     # Place createAbstract.go in /usr/local/google/home/zicong/code/src/github.com/zicongmei/ai-story/fullText1/pkg/abstract/
     # Place story.go in /usr/local/google/home/zicong/code/src/github.com/zicongmei/ai-story/fullText1/pkg/story/
-    # Place gemini.go in /usr/local/google/home/zicong/code/src/github.com/zicongmei/ai-story/fullText1/pkg/utils/
+    # Place gemini.go in /usr/local/google/home/zicong/code/src/github.com/zicongmei/ai-story/fullText1/pkg/aiEndpoint/
     ```
 
 3.  **Install the Google Generative AI Go library and YAML library:**
@@ -81,7 +81,7 @@ You can create a custom JSON file to store your API key and model name.
 If you don't provide a `--config` flag to either subcommand, the program will look for your API key in the `GEMINI_API_KEY` environment variable and use `gemini-2.5-flash` as the model.
 
 ```bash
-export GEMINI_API_KEY="YOUR_GEMINI_API_KEY"
+export GEMINI_API_KEY="YOUR_GEMINI_API_KEY_HERE"
 # Then run the program without --config for either subcommand
 ```
 
