@@ -18,11 +18,11 @@ import (
 // AbstractOutput structure for JSON output
 type AbstractOutput struct {
 	Abstract         string `json:"abstract"`
-	ThoughtSignature string `json:"thought_signature"`
+	ThoughtSignature []byte `json:"thought_signature"`
 }
 
 // generateAbstract interacts with the Gemini API to create a story abstract.
-func generateAbstract(apiKey, modelName, thinkingLevel, instruction, language string, numChapters int) (string, string, int, int, float64, error) { // Updated signature
+func generateAbstract(apiKey, modelName, thinkingLevel, instruction, language string, numChapters int) (string, []byte, int, int, float64, error) { // Updated signature
 	// Prompt engineering for a concise abstract
 	// Dynamically include the number of chapters in the prompt
 	prompt := fmt.Sprintf(`Write a concise, compelling story writing plan.
@@ -41,7 +41,7 @@ It need to include the settings, the name of main characters and a detail plan f
 	// Note: We pass nil for history here as this is the initial request
 	abstract, signature, inputTokens, outputTokens, cost, err := utils.CallGeminiAPI(context.Background(), apiKey, modelName, prompt, thinkingLevel, nil) // Updated call
 	if err != nil {
-		return "", "", 0, 0, 0, fmt.Errorf("error generating content from Gemini: %w", err)
+		return "", nil, 0, 0, 0, fmt.Errorf("error generating content from Gemini: %w", err)
 	}
 
 	return abstract, signature, inputTokens, outputTokens, cost, nil

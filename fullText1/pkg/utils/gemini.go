@@ -47,7 +47,7 @@ const (
 type HistoryTurn struct {
 	UserPrompt       string
 	ModelResponse    string
-	ThoughtSignature string
+	ThoughtSignature []byte
 }
 
 // ModelPrices holds the per-million token pricing for a specific model tier.
@@ -187,12 +187,12 @@ func LoadGeminiConfigWithFallback(configPath string) (string, string, string, er
 // CallGeminiAPI sends a prompt to the Gemini API and returns the generated text, thought signature,
 // along with the input and output token counts, and the calculated cost.
 // It supports an optional thinkingLevel and previous conversation history for thought chain continuity.
-func CallGeminiAPI(ctx context.Context, apiKey, modelName, prompt, thinkingLevel string, previousTurn *HistoryTurn) (string, string, int, int, float64, error) { // Updated signature
+func CallGeminiAPI(ctx context.Context, apiKey, modelName, prompt, thinkingLevel string, previousTurn *HistoryTurn) (string, []byte, int, int, float64, error) { // Updated signature
 	log.Printf("Gemini API Call: Initiating call to model '%s'. Thinking Level: '%s'. Prompt length: %d characters.", modelName, thinkingLevel, len(prompt))
 
 	client, err := genai.NewClient(ctx, &genai.ClientConfig{APIKey: apiKey})
 	if err != nil {
-		return "", "", 0, 0, 0, fmt.Errorf("error creating Gemini client: %w", err)
+		return "", nil, 0, 0, 0, fmt.Errorf("error creating Gemini client: %w", err)
 	}
 
 	// Construct request contents, potentially including history
@@ -207,7 +207,7 @@ func CallGeminiAPI(ctx context.Context, apiKey, modelName, prompt, thinkingLevel
 			Role: "model",
 			Parts: []*genai.Part{{
 				Text:             previousTurn.ModelResponse,
-				ThoughtSignature: []byte(previousTurn.ThoughtSignature),
+				ThoughtSignature: previousTurn.ThoughtSignature,
 			}},
 		})
 	}
@@ -270,16 +270,16 @@ func CallGeminiAPI(ctx context.Context, apiKey, modelName, prompt, thinkingLevel
 
 	if err != nil {
 		log.Printf("Gemini API Call: Error generating content: %v", err)
-		return "", "", inputTokens, 0, 0, fmt.Errorf("error generating content from Gemini: %w", err)
+		return "", nil, inputTokens, 0, 0, fmt.Errorf("error generating content from Gemini: %w", err)
 	}
 
 	if len(resp.Candidates) == 0 || resp.Candidates[0].Content == nil || len(resp.Candidates[0].Content.Parts) == 0 {
 		log.Printf("Gemini API Call: No content generated for the given instruction.")
-		return "", "", inputTokens, 0, 0, fmt.Errorf("no content generated from Gemini for the given instruction")
+		return "", nil, inputTokens, 0, 0, fmt.Errorf("no content generated from Gemini for the given instruction")
 	}
 
 	generatedText := resp.Text()
-	thoughtSignature := ""
+	var thoughtSignature []byte
 	if len(resp.Candidates) > 0 && len(resp.Candidates[0].Content.Parts) > 0 {
 		thoughtSignature = resp.Candidates[0].Content.Parts[0].ThoughtSignature
 	}

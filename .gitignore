@@ -33,5 +33,6 @@ go.work.sum
 hack/
 vendor/
 abstract-*.txt
+abstract-*.json
 fulltext-*.txt
 log-*.log

@@ -284,7 +284,7 @@ Write Chapter %d now, ensuring it flows logically from previous chapters and adh
 		)
 
 		var chapterText string
-		var chapterSignature string
+		var chapterSignature []byte
 		var chapterInputTokens, chapterOutputTokens int
 		var chapterCost float64
 		var chapterGenerationErr error
