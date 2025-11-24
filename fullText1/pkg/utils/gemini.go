@@ -196,7 +196,7 @@ func CallGeminiAPI(ctx context.Context, apiKey, modelName, prompt, thinkingLevel
 		// If thinking level is set for the supported model, use it and do NOT set thinking budget.
 		genConfig = &genai.GenerateContentConfig{
 			ThinkingConfig: &genai.ThinkingConfig{
-				ThinkingLevel: &thinkingLevel,
+				ThinkingLevel: genai.ThinkingLevel(thinkingLevel),
 			},
 		}
 	} else {
