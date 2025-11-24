@@ -10,58 +10,61 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// AbstractOutput structure for YAML/JSON output
+// AbstractOutput structure func call
 type AbstractOutput struct {
 	Abstract         string `json:"abstract" yaml:"abstract"`
 	ThoughtSignature []byte `json:"thought_signature,omitempty" yaml:"thought_signature,omitempty"`
 }
 
+// AbstractOutputFile structure for YAML/JSON output
+type AbstractOutputFile struct {
+	Abstract         string `json:"abstract" yaml:"abstract"`
+	ThoughtSignature string `json:"thought_signature,omitempty" yaml:"thought_signature,omitempty"`
+}
+
 // ReadAbstractFile reads an abstract from the specified file path.
 // It attempts to parse it as YAML or JSON first, falling back to plain text if parsing fails.
 // It returns the abstract content, a boolean indicating if it was successfully parsed (YAML/JSON), and an error.
-func ReadAbstractFile(abstractFilePath string) (abstractContent string, parsed bool, err error) {
+func ReadAbstractFile(abstractFilePath string) (rawAbstractContent string, thoughtSignature []byte, err error) {
 	abstractContentBytes, err := os.ReadFile(abstractFilePath)
 	if err != nil {
-		return "", false, fmt.Errorf("failed to read abstract file '%s': %w", abstractFilePath, err)
+		return "", nil, fmt.Errorf("failed to read abstract file '%s': %w", abstractFilePath, err)
 	}
 
-	abstractContent = string(abstractContentBytes) // Default to raw content
-	parsed = false
+	rawAbstractContent = string(abstractContentBytes) // Default to raw content
+	thoughtSignature = []byte{}
 
 	if strings.HasSuffix(strings.ToLower(abstractFilePath), ".yaml") || strings.HasSuffix(strings.ToLower(abstractFilePath), ".yml") {
-		var abstractData AbstractOutput
+		var abstractData AbstractOutputFile
 		if err := yaml.Unmarshal(abstractContentBytes, &abstractData); err != nil {
 			log.Printf("Warning: Failed to parse abstract file '%s' as YAML: %v. Attempting to treat as plain text.", abstractFilePath, err)
 			// Continue, abstractContent remains raw content
 		} else {
-			abstractContent = abstractData.Abstract
+			rawAbstractContent = abstractData.Abstract
+			thoughtSignature = []byte(abstractData.ThoughtSignature)
 			log.Printf("Successfully parsed abstract content from YAML file.")
-			parsed = true
 		}
 	} else if strings.HasSuffix(strings.ToLower(abstractFilePath), ".json") {
-		var abstractData AbstractOutput
+		var abstractData AbstractOutputFile
 		if err := json.Unmarshal(abstractContentBytes, &abstractData); err != nil {
 			log.Printf("Warning: Failed to parse abstract file '%s' as JSON: %v. Attempting to treat as plain text.", abstractFilePath, err)
 			// Continue, abstractContent remains raw content
 		} else {
-			abstractContent = abstractData.Abstract
+			rawAbstractContent = abstractData.Abstract
+			thoughtSignature = []byte(abstractData.ThoughtSignature)
 			log.Printf("Successfully parsed abstract content from JSON file.")
-			parsed = true
 		}
 	}
 
-	if !parsed {
-		log.Printf("Abstract file '%s' is not a recognized YAML or JSON format, or parsing failed. Treating content as plain text abstract.", abstractFilePath)
-	}
-
-	return abstractContent, parsed, nil
+	return rawAbstractContent, thoughtSignature, nil
 }
 
 // WriteAbstractFile writes the abstract content and thought signature to the specified file path in YAML format.
+// The `ThoughtSignature []byte` field will be automatically base64 encoded by the YAML marshaler.
 func WriteAbstractFile(outputPath string, abstract string, thoughtSignature []byte) error {
-	outputData := AbstractOutput{
+	outputData := AbstractOutputFile{
 		Abstract:         abstract,
-		ThoughtSignature: thoughtSignature,
+		ThoughtSignature: string(thoughtSignature),
 	}
 	yamlBytes, err := yaml.Marshal(outputData)
 	if err != nil {

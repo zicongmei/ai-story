@@ -13,7 +13,7 @@ This Go program provides a command-line interface to interact with the Google Ge
 *   **Story Generation from Abstract:** The `story` subcommand takes an abstract and generates the full text, chapter by chapter, adhering to a specified word count per chapter, **sending the entire abstract to the AI as context for each chapter generation**. Each generated chapter is immediately appended to the output file.
 *   **Robust Chapter Generation:** When generating individual story chapters, if `aiEndpoint.CallGeminiAPI` encounters an error, the program will automatically **retry up to 3 times** to regenerate that chapter before marking it with an error message and continuing. This improves resilience against transient API issues.
 *   **Resume Generation:** If the `--output` file already exists, the program will send its content to Gemini to identify the number of previously written chapters. Generation will then resume from the next missing chapter. The full content of the existing file (including abstract and previously written chapters) is sent as context for the first new chapter, and subsequent newly generated chapters are appended to this context for continuous flow.
-*   **Dedicated Log File for Story Generation:** When running the `story` subcommand, a separate log file will be created. If the `--abstract-file` is named `abstract-YYYY-MM-DD-HH-MM-SS.yaml`, the log will be saved as `log-YYYY-MM-DD-HH-MM-SS.log` in the current directory. All `log.Printf` and `log.Fatalf` messages from the `story` subcommand will be written to this file in addition to `stderr`.
+*   **Dedicated Log File for Story Generation:** When running the `story` subcommand, a separate log file will be created. If the `--abstract` is named `abstract-YYYY-MM-DD-HH-MM-SS.yaml`, the log will be saved as `log-YYYY-MM-DD-HH-MM-SS.log` in the current directory. All `log.Printf` and `log.Fatalf` messages from the `story` subcommand will be written to this file in addition to `stderr`.
 *   **Default Settings:** Sensible defaults for output file name (`abstract-yyyy-mm-dd-hh-mm-ss.yaml` or `fulltext-yyyy-mm-dd-hh-mm-ss.txt`). No default configuration file is assumed; if `--config` is not used, environment variables are checked.
 *   **Flexible Input:** Takes story instructions as an *optional* command-line argument for the `abstract` subcommand.
 *   **Persistent Output:** Saves the generated abstract or full story to a specified (or default) text file.
@@ -92,6 +92,28 @@ go run main.go
 ### Abstract Subcommand
 
 To generate an abstract, use the `abstract` subcommand.
+
+#### Abstract File Format
+
+The generated abstract is saved in YAML format, including the abstract text and the thought signature from the Gemini model (if available). The `thought_signature` field, being a byte array, is automatically [base64 encoded](https://pkg.go.dev/gopkg.in/yaml.v3#Marshal) by the YAML library when written to the file.
+
+```yaml
+# Example content of an abstract YAML file:
+abstract: |
+  A futuristic detective, Kaito, navigates the neon-drenched districts of Neo-Kyoto in 2077.
+  The city, a supposed automated utopia managed by the benevolent AI, "Aether," is suddenly plagued
+  by subtle yet disruptive anomalies. Kaito, a grizzled veteran haunted by past failures,
+  is assigned the case of a rogue AI causing these disturbances. His investigation leads him
+  through the city's underbelly, revealing a conspiracy far grander than he imagined.
+  Aether's true motives come into question, and Kaito must decide whether to expose the truth,
+  risking the collapse of society, or maintain the illusion of peace.
+
+  Chapter 1: The Glitch in the Machine
+  Chapter 2: Neon Shadows
+  ...
+  Chapter 30: The Human Element
+thought_signature: Y3h2Y2Fhczh4Y2FzOGRzYWQ4c3kxYmNhc2E= # Base64 encoded byte array
+```
 
 #### Basic Usage (using environment variable)
 
@@ -181,7 +203,7 @@ To generate a full story from an existing abstract, use the `story` subcommand. 
 ```bash
 export GEMINI_API_KEY="YOUR_GEMINI_API_KEY_HERE"
 go run main.go story \
-    --abstract-file "abstract-2023-10-27-10-30-45.yaml" \
+    --abstract "abstract-2023-10-27-10-30-45.yaml" \
     --words-per-chapter 500
 ```
 This will generate a full story based on `abstract-2023-10-27-10-30-45.yaml`, with each chapter aiming for around 500 words (actual word count may vary by +/- 20%). The output file will be named `fulltext-2023-10-27-10-30-45.txt`. Each chapter will be written to the output file immediately after generation. A log file named `log-2023-10-27-10-30-45.log` will also be created, containing all log messages from the story generation process.
@@ -193,7 +215,7 @@ This will generate a full story based on `abstract-2023-10-27-10-30-45.yaml`, wi
 ```bash
 go run main.go story \
     --config "./my_custom_gemini_config.json" \
-    --abstract-file "my_story_abstract.yaml" \
+    --abstract "my_story_abstract.yaml" \
     --words-per-chapter 750 \
     --output "full_story_epic.txt"
 ```
@@ -204,7 +226,7 @@ If `my_story_abstract.yaml` doesn't follow the `abstract-YYYY-MM-DD-HH-MM-SS.yam
 ```bash
 go run main.go story \
     --config "/home/user/my_gemini_keys/config.json" \
-    --abstract-file "fantasy_abstract.yaml" \
+    --abstract "fantasy_abstract.yaml" \
     --words-per-chapter 600 \
     --output "generated_fantasy_story.txt"
 ```
