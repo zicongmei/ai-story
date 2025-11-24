@@ -16,7 +16,7 @@ This Go program provides a command-line interface to interact with the Google Ge
 *   **Default Settings:** Sensible defaults for output file name (`abstract-yyyy-mm-dd-hh-mm-ss.txt` or `fulltext-yyyy-mm-dd-hh-mm-ss.txt`). No default configuration file is assumed; if `--config` is not used, environment variables are checked.
 *   **Flexible Input:** Takes story instructions as an *optional* command-line argument for the `abstract` subcommand.
 *   **Persistent Output:** Saves the generated abstract or full story to a specified (or default) text file.
-*   **Dynamic Thinking Budget:** The Gemini API calls are configured with `ThinkingBudget: -1`, enabling dynamic thinking by the model.
+*   **Dynamic Thinking Budget:** The Gemini API calls are configured with `ThinkingBudget: -1` by default, enabling dynamic thinking by the model. This can be overridden for compatible models using `thinking_level` in the config.
 
 ## Installation
 
@@ -64,11 +64,13 @@ You can create a custom JSON file to store your API key and model name.
     ```json
     {
       "api_key": "YOUR_GEMINI_API_KEY",
-      "model_name": "gemini-2.5-pro"
+      "model_name": "gemini-3-pro-preview",
+      "thinking_level": "low"
     }
     ```
     *   **`api_key`**: Replace `YOUR_GEMINI_API_KEY` with your actual Google Gemini API key. You can obtain one from the [Google AI Studio](https://makersuite.google.com/keys). If omitted here, the `GEMINI_API_KEY` environment variable will be used as a fallback.
     *   **`model_name`**: (Optional) Specify the Gemini model to use. If omitted, the program defaults to `gemini-2.5-flash`. Common valid models include `gemini-1.5-pro` (mapped to `gemini-2.5-pro` for pricing) or `gemini-2.5-flash`.
+    *   **`thinking_level`**: (Optional) Specify the thinking level for the `gemini-3-pro-preview` model. Valid values include "low", "high", etc. If this is set, `thinking_budget` is not set. This setting is ignored for other models or if empty.
 
     You must then provide the path to this file using the `--config` flag when running either `abstract` or `story` subcommand.
 

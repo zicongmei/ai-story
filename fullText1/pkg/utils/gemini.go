@@ -92,10 +92,11 @@ func GetModelPrices(modelName string, inputTokens int) (*ModelPrices, error) {
 	}
 }
 
-// GeminiConfig holds the API key and model name for Gemini.
+// GeminiConfig holds the API key, model name, and thinking level for Gemini.
 type GeminiConfig struct {
-	APIKey    string `json:"api_key"`
-	ModelName string `json:"model_name"`
+	APIKey        string `json:"api_key"`
+	ModelName     string `json:"model_name"`
+	ThinkingLevel string `json:"thinking_level"`
 }
 
 // LoadGeminiConfig reads the Gemini configuration from the specified JSON file.
@@ -117,10 +118,11 @@ func LoadGeminiConfig(configPath string) (*GeminiConfig, error) {
 
 // LoadGeminiConfigWithFallback attempts to load configuration from a file.
 // If the file is not provided or fails to load, it falls back to environment variables
-// and default model names. It returns the API key and model name, or an error.
-func LoadGeminiConfigWithFallback(configPath string) (string, string, error) {
+// and default model names. It returns the API key, model name, thinking level, or an error.
+func LoadGeminiConfigWithFallback(configPath string) (string, string, string, error) {
 	var apiKey string
 	var modelName string
+	var thinkingLevel string
 
 	if configPath != "" {
 		geminiConfig, err := LoadGeminiConfig(configPath)
@@ -129,20 +131,21 @@ func LoadGeminiConfigWithFallback(configPath string) (string, string, error) {
 			// Fall through to environment variable logic.
 			apiKey = os.Getenv("GEMINI_API_KEY")
 			if apiKey == "" {
-				return "", "", fmt.Errorf("GEMINI_API_KEY environment variable is not set, and the specified config file '%s' could not be loaded or was invalid. Please set GEMINI_API_KEY or provide a valid --config file", configPath)
+				return "", "", "", fmt.Errorf("GEMINI_API_KEY environment variable is not set, and the specified config file '%s' could not be loaded or was invalid. Please set GEMINI_API_KEY or provide a valid --config file", configPath)
 			}
 			modelName = DefaultGeminiModel // Use the hardcoded default model
 		} else {
 			// Configuration file loaded successfully. Use values from it.
 			apiKey = geminiConfig.APIKey
 			modelName = geminiConfig.ModelName
+			thinkingLevel = geminiConfig.ThinkingLevel
 
 			// If API key is missing in the config file, try environment variable as a secondary source.
 			if apiKey == "" {
 				log.Printf("Warning: API Key is missing in the config file '%s'. Attempting to use GEMINI_API_KEY environment variable.", configPath)
 				apiKey = os.Getenv("GEMINI_API_KEY")
 				if apiKey == "" {
-					return "", "", fmt.Errorf("API Key is missing in the config file and GEMINI_API_KEY environment variable is not set. Please provide an API key")
+					return "", "", "", fmt.Errorf("API Key is missing in the config file and GEMINI_API_KEY environment variable is not set. Please provide an API key")
 				}
 			}
 
@@ -157,27 +160,28 @@ func LoadGeminiConfigWithFallback(configPath string) (string, string, error) {
 		log.Printf("No --config file specified. Attempting to use GEMINI_API_KEY environment variable and default model '%s'.", DefaultGeminiModel)
 		apiKey = os.Getenv("GEMINI_API_KEY")
 		if apiKey == "" {
-			return "", "", fmt.Errorf("GEMINI_API_KEY environment variable is not set. Please set GEMINI_API_KEY or provide a valid --config file")
+			return "", "", "", fmt.Errorf("GEMINI_API_KEY environment variable is not set. Please set GEMINI_API_KEY or provide a valid --config file")
 		}
 		modelName = DefaultGeminiModel // Use the hardcoded default model
 	}
 
 	// Final check to ensure we have an API key and model name
 	if apiKey == "" {
-		return "", "", fmt.Errorf("no API key found after checking config file (if provided) and environment variable. Please provide it")
+		return "", "", "", fmt.Errorf("no API key found after checking config file (if provided) and environment variable. Please provide it")
 	}
 	if modelName == "" { // This case should theoretically be covered by the logic above, but good for robustness.
 		modelName = DefaultGeminiModel
 		log.Printf("Warning: Model name was somehow still empty, defaulting to %s.", modelName)
 	}
 
-	return apiKey, modelName, nil
+	return apiKey, modelName, thinkingLevel, nil
 }
 
 // CallGeminiAPI sends a prompt to the Gemini API and returns the generated text,
 // along with the input and output token counts, and the calculated cost.
-func CallGeminiAPI(ctx context.Context, apiKey, modelName, prompt string) (string, int, int, float64, error) { // Added float64 for cost
-	log.Printf("Gemini API Call: Initiating call to model '%s'. Prompt length: %d characters.", modelName, len(prompt))
+// It supports an optional thinkingLevel for compatible models (e.g., gemini-3-pro-preview).
+func CallGeminiAPI(ctx context.Context, apiKey, modelName, prompt, thinkingLevel string) (string, int, int, float64, error) { // Added thinkingLevel
+	log.Printf("Gemini API Call: Initiating call to model '%s'. Thinking Level: '%s'. Prompt length: %d characters.", modelName, thinkingLevel, len(prompt))
 
 	client, err := genai.NewClient(ctx, &genai.ClientConfig{APIKey: apiKey})
 	if err != nil {
@@ -185,11 +189,24 @@ func CallGeminiAPI(ctx context.Context, apiKey, modelName, prompt string) (strin
 	}
 
 	apiPrompt := genai.Text(prompt)
-	thinking := int32(-1)
-	genCofig := &genai.GenerateContentConfig{
-		ThinkingConfig: &genai.ThinkingConfig{
-			ThinkingBudget: &thinking,
-		},
+
+	var genConfig *genai.GenerateContentConfig
+
+	if modelName == "gemini-3-pro-preview" && thinkingLevel != "" {
+		// If thinking level is set for the supported model, use it and do NOT set thinking budget.
+		genConfig = &genai.GenerateContentConfig{
+			ThinkingConfig: &genai.ThinkingConfig{
+				ThinkingLevel: &thinkingLevel,
+			},
+		}
+	} else {
+		// Default behavior: Use dynamic thinking budget (-1).
+		thinking := int32(-1)
+		genConfig = &genai.GenerateContentConfig{
+			ThinkingConfig: &genai.ThinkingConfig{
+				ThinkingBudget: &thinking,
+			},
+		}
 	}
 
 	// First, count input tokens to determine pricing tier
@@ -211,7 +228,7 @@ func CallGeminiAPI(ctx context.Context, apiKey, modelName, prompt string) (strin
 		modelPrices = &ModelPrices{} // Default to zero prices if not found
 	}
 
-	resp, err := client.Models.GenerateContent(ctx, modelName, apiPrompt, genCofig)
+	resp, err := client.Models.GenerateContent(ctx, modelName, apiPrompt, genConfig)
 
 	if err != nil {
 		log.Printf("Gemini API Call: Error generating content: %v", err)

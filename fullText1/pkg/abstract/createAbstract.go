@@ -15,7 +15,7 @@ import (
 )
 
 // generateAbstract interacts with the Gemini API to create a story abstract.
-func generateAbstract(apiKey, modelName, instruction, language string, numChapters int) (string, int, int, float64, error) { // Updated signature for cost
+func generateAbstract(apiKey, modelName, thinkingLevel, instruction, language string, numChapters int) (string, int, int, float64, error) { // Updated signature
 	// Prompt engineering for a concise abstract
 	// Dynamically include the number of chapters in the prompt
 	prompt := fmt.Sprintf(`Write a concise, compelling story writing plan.
@@ -31,7 +31,7 @@ It need to include the settings, the name of main characters and a detail plan f
 	// Add language instruction to the prompt
 	prompt += fmt.Sprintf("\nOutput the plan in %s.", language)
 
-	abstract, inputTokens, outputTokens, cost, err := utils.CallGeminiAPI(context.Background(), apiKey, modelName, prompt) // Updated call
+	abstract, inputTokens, outputTokens, cost, err := utils.CallGeminiAPI(context.Background(), apiKey, modelName, prompt, thinkingLevel) // Updated call
 	if err != nil {
 		return "", 0, 0, 0, fmt.Errorf("error generating content from Gemini: %w", err)
 	}
@@ -40,7 +40,7 @@ It need to include the settings, the name of main characters and a detail plan f
 }
 
 // getChapterCountFromGemini sends the abstract to Gemini to get a pure chapter count.
-func getChapterCountFromGemini(apiKey, modelName, abstract string) (int, int, int, float64, error) { // Updated signature for cost
+func getChapterCountFromGemini(apiKey, modelName, thinkingLevel, abstract string) (int, int, int, float64, error) { // Updated signature
 	prompt := fmt.Sprintf(`Given the following complete story abstract (plan), please return ONLY the total number of chapters planned within it.
 Do not include any other text, explanation, or formatting. Just the pure number.
 
@@ -49,7 +49,7 @@ Do not include any other text, explanation, or formatting. Just the pure number.
 --- End Story Abstract ---
 `, abstract)
 
-	countStr, inputTokens, outputTokens, cost, err := utils.CallGeminiAPI(context.Background(), apiKey, modelName, prompt) // Updated call
+	countStr, inputTokens, outputTokens, cost, err := utils.CallGeminiAPI(context.Background(), apiKey, modelName, prompt, thinkingLevel) // Updated call
 	if err != nil {
 		return 0, 0, 0, 0, fmt.Errorf("error calling Gemini to get chapter count: %w", err)
 	}
@@ -91,7 +91,7 @@ func Execute(args []string) error {
 	}
 
 	// Load Gemini config using the utility function
-	apiKey, modelName, err := utils.LoadGeminiConfigWithFallback(*configPath)
+	apiKey, modelName, thinkingLevel, err := utils.LoadGeminiConfigWithFallback(*configPath) // Updated to receive thinkingLevel
 	if err != nil {
 		return err // utils.LoadGeminiConfigWithFallback already logs detailed errors.
 	}
@@ -114,7 +114,8 @@ func Execute(args []string) error {
 
 	// --- Generate Abstract ---
 	log.Printf("Initiating abstract generation using Gemini model: %s, output language: %s, chapters: %d", modelName, *language, numChapters)
-	abstract, inputTokensAbstract, outputTokensAbstract, costAbstract, err := generateAbstract(apiKey, modelName, *instruction, *language, numChapters)
+	// Updated call to include thinkingLevel
+	abstract, inputTokensAbstract, outputTokensAbstract, costAbstract, err := generateAbstract(apiKey, modelName, thinkingLevel, *instruction, *language, numChapters)
 	if err != nil {
 		return fmt.Errorf("error generating abstract: %w", err)
 	}
@@ -142,7 +143,8 @@ func Execute(args []string) error {
 
 	// --- New Step: Get pure chapter count from Gemini ---
 	log.Printf("Sending abstract to Gemini to get pure chapter count...")
-	pureChapterCount, inputTokensCount, outputTokensCount, costCount, err := getChapterCountFromGemini(apiKey, modelName, abstract) // Updated call
+	// Updated call to include thinkingLevel
+	pureChapterCount, inputTokensCount, outputTokensCount, costCount, err := getChapterCountFromGemini(apiKey, modelName, thinkingLevel, abstract)
 	if err != nil {
 		log.Printf("Warning: Failed to get pure chapter count from Gemini: %v. Proceeding without this information.", err)
 	} else {
