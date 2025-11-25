@@ -196,12 +196,13 @@ func LoadGeminiConfigWithFallback(configPath string) GeminiConfigDetails { // Ch
 
 // CallGeminiAPIInput holds all input parameters for the CallGeminiAPI function.
 type CallGeminiAPIInput struct {
-	Ctx           context.Context
-	APIKey        string
-	ModelName     string
-	Prompt        string
-	ThinkingLevel string
-	PreviousTurn  *HistoryTurn
+	Ctx              context.Context
+	APIKey           string
+	ModelName        string
+	Prompt           string
+	ThinkingLevel    string
+	PreviousTurn     *HistoryTurn
+	ThoughtSignature []byte
 }
 
 // GeminiAPIResponse holds all output parameters for the CallGeminiAPI function.
@@ -242,8 +243,10 @@ func CallGeminiAPI(input CallGeminiAPIInput) GeminiAPIResponse { // Updated sign
 
 	if input.PreviousTurn != nil {
 		reqContents = append(reqContents, &genai.Content{
-			Role:  "user",
-			Parts: []*genai.Part{{Text: input.PreviousTurn.UserPrompt}},
+			Role: "user",
+			Parts: []*genai.Part{{
+				Text: input.PreviousTurn.UserPrompt,
+			}},
 		})
 		reqContents = append(reqContents, &genai.Content{
 			Role: "model",
@@ -256,8 +259,11 @@ func CallGeminiAPI(input CallGeminiAPIInput) GeminiAPIResponse { // Updated sign
 
 	// Add current prompt
 	reqContents = append(reqContents, &genai.Content{
-		Role:  "user",
-		Parts: []*genai.Part{{Text: input.Prompt}},
+		Role: "user",
+		Parts: []*genai.Part{{
+			Text:             input.Prompt,
+			ThoughtSignature: input.ThoughtSignature,
+		}},
 	})
 
 	var genConfig *genai.GenerateContentConfig
