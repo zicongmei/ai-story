@@ -427,16 +427,17 @@ Write Chapter %d now, ensuring it flows logically from previous chapters and adh
 			chapterCost = 0
 		}
 
+		chapterContentToWrite := strings.TrimSpace(chapterText) + "\n\n"
+		wordCount := len(strings.Fields(chapterContentToWrite))
 		// Accumulate token counts and cost
 		state.AccumulatedInputTokens += chapterInputTokens
 		state.AccumulatedOutputTokens += chapterOutputTokens
 		state.AccumulatedCost += chapterCost
-		log.Printf("Chapter %d tokens: Input %d, Output %d, Cost: $%.6f. Accumulated tokens: Input %d, Output %d, Accumulated Cost: $%.6f",
-			chapterNum, chapterInputTokens, chapterOutputTokens, chapterCost, state.AccumulatedInputTokens, state.AccumulatedOutputTokens, state.AccumulatedCost)
+		log.Printf("Chapter %d tokens: Words %d, Input %d, Output %d, Cost: $%.6f. Accumulated tokens: Input %d, Output %d, Accumulated Cost: $%.6f",
+			chapterNum, wordCount, chapterInputTokens, chapterOutputTokens, chapterCost, state.AccumulatedInputTokens, state.AccumulatedOutputTokens, state.AccumulatedCost)
 
 		// Write the generated chapter directly to the file
 		chapterHeader := fmt.Sprintf("## Chapter %d\n\n", chapterNum)
-		chapterContentToWrite := strings.TrimSpace(chapterText) + "\n\n"
 
 		if _, err := f.WriteString(chapterHeader); err != nil {
 			log.Printf("Error writing chapter header for Chapter %d to file: %v", chapterNum, err)

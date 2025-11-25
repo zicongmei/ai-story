@@ -312,7 +312,6 @@ func CallGeminiAPI(input CallGeminiAPIInput) GeminiAPIResponse { // Updated sign
 	if countResp != nil {
 		response.InputTokens = int(countResp.TotalTokens)
 	}
-	log.Printf("Gemini API Call: Input token count: %d", response.InputTokens)
 
 	// Get model prices based on model name and input tokens
 	modelPrices, err := GetModelPrices(input.ModelName, response.InputTokens)
@@ -368,8 +367,6 @@ func CallGeminiAPI(input CallGeminiAPIInput) GeminiAPIResponse { // Updated sign
 	// Calculate cost
 	response.Cost = (float64(response.InputTokens)/TokensPerMillion)*modelPrices.InputPricePerMillion +
 		(float64(response.OutputTokens)/TokensPerMillion)*modelPrices.OutputPricePerMillion
-
-	log.Printf("Gemini API Call: Call to model '%s' completed. Input tokens: %d, Output tokens: %d, Cost: $%.6f", input.ModelName, response.InputTokens, response.OutputTokens, response.Cost)
 
 	return response
 }
