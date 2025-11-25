@@ -56,7 +56,7 @@ It need to include the settings, the name of main characters and a detail plan f
 	if input.Instruction != "" {
 		prompt += "\nStory Idea: " + input.Instruction
 	} else {
-		prompt += " Create a detailed story idea."
+		prompt += " Create a detailed story idea. Use around 100 words to describe each chapter in the story planning. "
 	}
 
 	// Add language instruction to the prompt
