@@ -25,7 +25,7 @@ type GetChapterCountForStoryInput struct {
 }
 
 // getChapterCountFromGeminiForStory sends the abstract to Gemini to get a pure chapter count for story generation.
-func getChapterCountFromGeminiForStory(input GetChapterCountForStoryInput) aiEndpoint.ChapterCountResult { // Updated signature
+func getChapterCountFromGeminiForStory(input GetChapterCountForStoryInput) aiEndpoint.ChapterCountResult {
 	var result aiEndpoint.ChapterCountResult
 
 	prompt := fmt.Sprintf(`Given the following complete story abstract (plan), please return ONLY the total number of chapters planned within it.
@@ -71,63 +71,6 @@ If no chapters are explicitly outlined, return 0.
 	return result
 }
 
-// GetWrittenChapterCountInput holds input parameters for getWrittenChapterCountFromGemini.
-type GetWrittenChapterCountInput struct {
-	APIKey               string
-	ModelName            string
-	ThinkingLevel        string
-	ExistingStoryContent string
-}
-
-// getWrittenChapterCountFromGemini sends the existing story content to Gemini to identify the last fully written chapter.
-func getWrittenChapterCountFromGemini(input GetWrittenChapterCountInput) aiEndpoint.ChapterCountResult { // Updated signature
-	var result aiEndpoint.ChapterCountResult
-
-	prompt := fmt.Sprintf(`Given the following story text, identify the number of the last *fully written* chapter.
-Look for chapter headers like '## Chapter X' (where X is the chapter number).
-Return ONLY the number.
-If no fully written chapters are found, or if the last detected chapter appears incomplete (e.g., ends abruptly or contains error messages), return 0.
-Do not include any other text, explanation, or formatting. Just the pure integer number.
-
---- Existing Story Content ---
-%s
---- End Existing Story Content ---
-`, input.ExistingStoryContent)
-
-	apiInput := aiEndpoint.CallGeminiAPIInput{
-		Ctx:           context.Background(),
-		APIKey:        input.APIKey,
-		ModelName:     input.ModelName,
-		Prompt:        prompt,
-		ThinkingLevel: input.ThinkingLevel,
-		PreviousTurn:  nil,
-	}
-	apiResponse := aiEndpoint.CallGeminiAPI(apiInput)
-
-	if apiResponse.Err != nil {
-		result.Err = fmt.Errorf("error calling Gemini to get written chapter count: %w", apiResponse.Err)
-		return result
-	}
-
-	countStr := strings.TrimSpace(apiResponse.GeneratedText)
-	countStr = strings.Split(countStr, "\n")[0]
-
-	count, err := strconv.Atoi(countStr)
-	if err != nil {
-		result.InputTokens = apiResponse.InputTokens
-		result.OutputTokens = apiResponse.OutputTokens
-		result.Cost = apiResponse.Cost
-		result.Err = fmt.Errorf("could not parse written chapter count '%s' from Gemini response: %w", countStr, err)
-		return result
-	}
-
-	result.Count = count
-	result.InputTokens = apiResponse.InputTokens
-	result.OutputTokens = apiResponse.OutputTokens
-	result.Cost = apiResponse.Cost
-	return result
-}
-
 // FullStoryConfig holds all configuration needed for story generation.
 type FullStoryConfig struct {
 	ConfigPath       string
@@ -146,11 +89,10 @@ type StoryProgressState struct {
 	AccumulatedInputTokens  int
 	AccumulatedOutputTokens int
 	AccumulatedCost         float64
-	PreviousChapters        string                  // Content of all chapters written so far, for context
-	CurrentHistory          *aiEndpoint.HistoryTurn // Last AI interaction for thought signature chain
+	PreviousChapters        string // Content of all chapters written so far, for context
+	LastThoughtSignature    []byte // Last AI thought signature for continuity
 	ChaptersAlreadyWritten  int
 	FirstNewChapter         int
-	FileMode                int // os.O_CREATE|os.O_WRONLY or os.O_APPEND|os.O_WRONLY
 }
 
 // parseAndValidateFlags parses command-line flags and performs initial validation.
@@ -271,88 +213,96 @@ func determineOutputFilePath(abstractFilePath, outputPathFlag string) string {
 	return fmt.Sprintf("fulltext-%s.txt", timestamp)
 }
 
-// initializeStoryStateForResume checks for existing story content and determines the resume point.
-// It updates the StoryProgressState with details for resuming.
-func initializeStoryStateForResume(cfg FullStoryConfig, finalOutputPath string) (StoryProgressState, error) {
-	state := StoryProgressState{
-		ChaptersAlreadyWritten: 0,
-		FirstNewChapter:        1,
-		FileMode:               os.O_CREATE | os.O_WRONLY,
-		PreviousChapters:       "",
+// determineStatusFilePath calculates the status file path based on the output file path.
+func determineStatusFilePath(outputFilePath string) string {
+	dir := filepath.Dir(outputFilePath)
+	base := filepath.Base(outputFilePath)
+
+	// Attempt to replace 'fulltext' with 'status'
+	newBase := strings.Replace(base, "fulltext", "status", 1)
+	if newBase == base {
+		// If 'fulltext' wasn't present, just prefix
+		newBase = "status-" + base
 	}
 
-	if _, err := os.Stat(finalOutputPath); err == nil {
-		log.Printf("Output file '%s' already exists. Checking for existing chapters to resume...", finalOutputPath)
-		contentBytes, readErr := os.ReadFile(finalOutputPath)
-		if readErr != nil {
-			log.Printf("Warning: Failed to read existing file '%s' to determine written chapters: %v. Starting from Chapter 1 (will overwrite if abstract/header is incomplete).", finalOutputPath, readErr)
-			// state.FileMode remains os.O_CREATE | os.O_WRONLY
-		} else {
-			existingStoryContent := string(contentBytes)
-			log.Printf("Sending existing content to Gemini to identify written chapters for resume...")
-			getWrittenChapterCountInput := GetWrittenChapterCountInput{
-				APIKey:               cfg.APIKey,
-				ModelName:            cfg.ModelName,
-				ThinkingLevel:        cfg.ThinkingLevel,
-				ExistingStoryContent: existingStoryContent,
-			}
-			writtenChapterCountResult := getWrittenChapterCountFromGemini(getWrittenChapterCountInput)
-			state.AccumulatedInputTokens += writtenChapterCountResult.InputTokens
-			state.AccumulatedOutputTokens += writtenChapterCountResult.OutputTokens
-			state.AccumulatedCost += writtenChapterCountResult.Cost
-
-			if writtenChapterCountResult.Err != nil {
-				log.Printf("Warning: Failed to get written chapter count from Gemini for existing file: %v. Assuming 0 chapters written and starting from Chapter 1 (will overwrite if abstract/header is incomplete).", writtenChapterCountResult.Err)
-				// state.FileMode remains os.O_CREATE | os.O_WRONLY
-			} else {
-				state.ChaptersAlreadyWritten = writtenChapterCountResult.Count
-				if state.ChaptersAlreadyWritten > 0 {
-					state.FirstNewChapter = state.ChaptersAlreadyWritten + 1
-					state.FileMode = os.O_APPEND | os.O_WRONLY    // Open in append mode
-					state.PreviousChapters = existingStoryContent // Start context with existing content
-					log.Printf("Detected %d chapters already written in '%s'. Resuming generation from Chapter %d.", state.ChaptersAlreadyWritten, finalOutputPath, state.FirstNewChapter)
-				} else {
-					log.Printf("No complete chapters detected in existing file '%s'. Starting from Chapter 1 (will overwrite if abstract/header is incomplete).", finalOutputPath)
-					// state.FileMode remains os.O_CREATE | os.O_WRONLY
-				}
-			}
-		}
+	// Ensure extension is .yaml
+	ext := filepath.Ext(newBase)
+	if ext != "" {
+		newBase = strings.TrimSuffix(newBase, ext) + ".yaml"
 	} else {
-		log.Printf("Output file '%s' does not exist. Starting new story generation from Chapter 1.", finalOutputPath)
-		// state.FileMode remains os.O_CREATE | os.O_WRONLY
+		newBase = newBase + ".yaml"
 	}
+
+	return filepath.Join(dir, newBase)
+}
+
+// initializeStoryState loads existing progress from the status file or initializes a new state.
+func initializeStoryState(statusFilePath string, abstractContent string) (StoryProgressState, error) {
+	state := StoryProgressState{
+		FirstNewChapter: 1,
+	}
+
+	if _, err := os.Stat(statusFilePath); err == nil {
+		log.Printf("Found status file '%s'. Loading state...", statusFilePath)
+		statusData, err := file.ReadStoryStatusFile(statusFilePath)
+		if err != nil {
+			return state, fmt.Errorf("failed to read status file: %w", err)
+		}
+
+		state.AccumulatedInputTokens = statusData.AccumulatedInputTokens
+		state.AccumulatedOutputTokens = statusData.AccumulatedOutputTokens
+		state.AccumulatedCost = statusData.AccumulatedCost
+		state.PreviousChapters = statusData.PreviousChapters
+		state.LastThoughtSignature = []byte(statusData.LastThoughtSignature)
+		state.ChaptersAlreadyWritten = statusData.ChaptersWritten
+		state.FirstNewChapter = state.ChaptersAlreadyWritten + 1
+
+		log.Printf("Resuming from Chapter %d.", state.FirstNewChapter)
+	} else {
+		log.Printf("No status file found at '%s'. Starting new story.", statusFilePath)
+		// Initialize header for new story
+		header := fmt.Sprintf("--- Full Story: %s ---\n\nStory Plan Abstract:\n%s\n\n----------------------------------------\n\n", time.Now().Format("2006-01-02 15:04:05"), abstractContent)
+		state.PreviousChapters = header
+	}
+
 	return state, nil
 }
 
-// writeInitialStoryHeader writes the header and abstract to the file if starting a new story (chaptersAlreadyWritten == 0).
-func writeInitialStoryHeader(f *os.File, abstractContent string, chaptersAlreadyWritten int) error {
-	if chaptersAlreadyWritten == 0 {
-		if _, err := fmt.Fprintf(f, "--- Full Story: %s ---\n\n", time.Now().Format("2006-01-02 15:04:05")); err != nil {
-			return fmt.Errorf("failed to write story header: %w", err)
-		}
-		if _, err := fmt.Fprintf(f, "Story Plan Abstract:\n%s\n\n", abstractContent); err != nil {
-			return fmt.Errorf("failed to write abstract to file: %w", err)
-		}
-		if _, err := fmt.Fprintf(f, "----------------------------------------\n\n"); err != nil {
-			return fmt.Errorf("failed to write separator to file: %w", err)
-		}
+// saveStateToFiles saves the current state to the status YAML file and rewrites the full text output file.
+func saveStateToFiles(state *StoryProgressState, statusFilePath, outputFilePath string) error {
+	// Save Status File
+	statusData := file.StoryStatus{
+		PreviousChapters:        state.PreviousChapters,
+		LastThoughtSignature:    string(state.LastThoughtSignature),
+		AccumulatedInputTokens:  state.AccumulatedInputTokens,
+		AccumulatedOutputTokens: state.AccumulatedOutputTokens,
+		AccumulatedCost:         state.AccumulatedCost,
+		ChaptersWritten:         state.ChaptersAlreadyWritten,
 	}
+	if err := file.WriteStoryStatusFile(statusFilePath, statusData); err != nil {
+		return fmt.Errorf("failed to save status file: %w", err)
+	}
+
+	// Rewrite Full Text File
+	if err := os.WriteFile(outputFilePath, []byte(state.PreviousChapters), 0644); err != nil {
+		return fmt.Errorf("failed to write story output file: %w", err)
+	}
+
 	return nil
 }
 
-// generateStoryChapters loops through and generates each chapter, writing it to the file.
-// It updates the StoryProgressState with token counts, cost, and accumulated content.
+// generateStoryChapters loops through and generates each chapter, writing status and content to files.
 func generateStoryChapters(
-	f *os.File,
 	cfg FullStoryConfig,
 	totalChapters int,
 	state *StoryProgressState,
+	statusFilePath string,
+	outputFilePath string,
 ) error {
 	log.Printf("Starting full story generation from Chapter %d to Chapter %d, aiming for %d words per chapter...",
 		state.FirstNewChapter, totalChapters, cfg.WordsPerChapter)
 
 	const maxChapterRetries = 3 // Number of retries for chapter generation
-	previousChapterThoughtSignature := []byte{}
 
 	for i := state.FirstNewChapter - 1; i < totalChapters; i++ {
 		chapterNum := i + 1
@@ -399,8 +349,8 @@ Write Chapter %d now, ensuring it flows logically from previous chapters and adh
 				ModelName:     cfg.ModelName,
 				Prompt:        prompt,
 				ThinkingLevel: cfg.ThinkingLevel,
-				//PreviousTurn:     state.CurrentHistory, // remove redundent content
-				ThoughtSignature: previousChapterThoughtSignature,
+				// PreviousTurn: nil, // Not using conversation history struct, using prompt context + thought signature
+				ThoughtSignature: state.LastThoughtSignature,
 			}
 			apiResponse := aiEndpoint.CallGeminiAPI(apiInput)
 
@@ -428,37 +378,25 @@ Write Chapter %d now, ensuring it flows logically from previous chapters and adh
 		}
 
 		chapterContentToWrite := strings.TrimSpace(chapterText) + "\n\n"
-		wordCount := len(strings.Fields(chapterContentToWrite))
-		// Accumulate token counts and cost
+		wordCount := len(strings.Fields(strings.ReplaceAll(chapterContentToWrite, "\n", " ")))
+		chapterHeader := fmt.Sprintf("## Chapter %d\n\n", chapterNum)
+
+		// Update State
 		state.AccumulatedInputTokens += chapterInputTokens
 		state.AccumulatedOutputTokens += chapterOutputTokens
 		state.AccumulatedCost += chapterCost
-		log.Printf("Chapter %d tokens: Words %d, Input %d, Output %d, Cost: $%.6f. Accumulated tokens: Input %d, Output %d, Accumulated Cost: $%.6f",
+		state.PreviousChapters += chapterHeader + chapterContentToWrite
+		state.LastThoughtSignature = chapterSignature
+		state.ChaptersAlreadyWritten = chapterNum
+
+		log.Printf("Chapter %d tokens: English words %d, Input %d, Output %d, Cost: $%.6f. Accumulated tokens: Input %d, Output %d, Accumulated Cost: $%.6f",
 			chapterNum, wordCount, chapterInputTokens, chapterOutputTokens, chapterCost, state.AccumulatedInputTokens, state.AccumulatedOutputTokens, state.AccumulatedCost)
 
-		// Write the generated chapter directly to the file
-		chapterHeader := fmt.Sprintf("## Chapter %d\n\n", chapterNum)
-
-		if _, err := f.WriteString(chapterHeader); err != nil {
-			log.Printf("Error writing chapter header for Chapter %d to file: %v", chapterNum, err)
-			return fmt.Errorf("failed to write chapter header: %w", err) // Critical error
+		// Save Status and Rewrite Full Text File
+		if err := saveStateToFiles(state, statusFilePath, outputFilePath); err != nil {
+			return err
 		}
-		if _, err := f.WriteString(chapterContentToWrite); err != nil {
-			log.Printf("Error writing Chapter %d content to file: %v", chapterNum, err)
-			return fmt.Errorf("failed to write chapter content: %w", err) // Critical error
-		}
-		log.Printf("Chapter %d generated and written to file.", chapterNum)
-
-		// Append the newly generated chapter to previousChapters for the *next* iteration's context
-		state.PreviousChapters += chapterHeader + chapterContentToWrite
-
-		// Update the history for the next iteration to maintain the thought signature chain
-		state.CurrentHistory = &aiEndpoint.HistoryTurn{
-			UserPrompt:       prompt,
-			ModelResponse:    chapterText,
-			ThoughtSignature: chapterSignature,
-		}
-		previousChapterThoughtSignature = chapterSignature
+		log.Printf("Chapter %d generated, status saved, and story file updated.", chapterNum)
 
 		// Add a small delay to avoid hitting rate limits if generating many chapters quickly
 		time.Sleep(1 * time.Second)
@@ -486,7 +424,6 @@ func Execute(args []string) error {
 	logFile, err := setupLogging(cfg.AbstractFilePath)
 	if err != nil {
 		// setupLogging already logs a warning and ensures logging goes to stderr.
-		// No need to return an error here, just proceed with stderr logging.
 	}
 	if logFile != nil {
 		defer logFile.Close() // Ensure the log file is closed
@@ -507,33 +444,32 @@ func Execute(args []string) error {
 		return err
 	}
 
-	// 5. Determine output path
+	// 5. Determine output paths
 	finalOutputPath := determineOutputFilePath(cfg.AbstractFilePath, cfg.OutputPath)
+	statusOutputPath := determineStatusFilePath(finalOutputPath)
 
-	// 6. Initialize story state (resume logic)
-	state, err := initializeStoryStateForResume(cfg, finalOutputPath)
+	// 6. Initialize story state (resume logic based on status file)
+	state, err := initializeStoryState(statusOutputPath, cfg.AbstractContent)
 	if err != nil {
 		return err
 	}
-	// Add initial token counts from chapter planning and resume checks
+
+	// Add initial token counts from chapter planning (only if starting fresh or if not already accounted for)
+	// Since we are resuming from status, if status exists, these counts might already be in there if we were careful.
+	// However, simple approach: add current run's setup cost to accumulator.
 	state.AccumulatedInputTokens += initialInputTokens
 	state.AccumulatedOutputTokens += initialOutputTokens
 	state.AccumulatedCost += initialCost
 
-	// 7. Open the output file for writing based on determined mode
-	f, err := os.OpenFile(finalOutputPath, state.FileMode, 0644)
-	if err != nil {
-		return fmt.Errorf("error opening/creating output file '%s': %w", finalOutputPath, err)
-	}
-	defer f.Close()
-
-	// 8. Write initial header if starting fresh
-	if err := writeInitialStoryHeader(f, cfg.AbstractContent, state.ChaptersAlreadyWritten); err != nil {
-		return err
+	// 7. If starting fresh (no chapters written), save initial state and file content immediately
+	if state.ChaptersAlreadyWritten == 0 {
+		if err := saveStateToFiles(&state, statusOutputPath, finalOutputPath); err != nil {
+			return fmt.Errorf("failed to save initial story state: %w", err)
+		}
 	}
 
-	// 9. Generate story chapter by chapter
-	if err := generateStoryChapters(f, cfg, totalChapters, &state); err != nil {
+	// 8. Generate story chapter by chapter
+	if err := generateStoryChapters(cfg, totalChapters, &state, statusOutputPath, finalOutputPath); err != nil {
 		return err
 	}
 

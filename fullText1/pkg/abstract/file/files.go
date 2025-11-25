@@ -22,6 +22,16 @@ type AbstractOutputFile struct {
 	ThoughtSignature string `json:"thought_signature,omitempty" yaml:"thought_signature,omitempty"`
 }
 
+// StoryStatus represents the state of story generation saved to a file.
+type StoryStatus struct {
+	PreviousChapters        string  `yaml:"previous_chapters"`
+	LastThoughtSignature    string  `yaml:"last_thought_signature"`
+	AccumulatedInputTokens  int     `yaml:"accumulated_input_tokens"`
+	AccumulatedOutputTokens int     `yaml:"accumulated_output_tokens"`
+	AccumulatedCost         float64 `yaml:"accumulated_cost"`
+	ChaptersWritten         int     `yaml:"chapters_written"`
+}
+
 // ReadAbstractFile reads an abstract from the specified file path.
 // It attempts to parse it as YAML or JSON first, falling back to plain text if parsing fails.
 // It returns the abstract content, a boolean indicating if it was successfully parsed (YAML/JSON), and an error.
@@ -74,6 +84,31 @@ func WriteAbstractFile(outputPath string, abstract string, thoughtSignature []by
 	err = os.WriteFile(outputPath, yamlBytes, 0644)
 	if err != nil {
 		return fmt.Errorf("error saving abstract to file '%s': %w", outputPath, err)
+	}
+	return nil
+}
+
+// ReadStoryStatusFile reads the story generation status from a YAML file.
+func ReadStoryStatusFile(path string) (StoryStatus, error) {
+	var status StoryStatus
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return status, fmt.Errorf("failed to read status file '%s': %w", path, err)
+	}
+	if err := yaml.Unmarshal(data, &status); err != nil {
+		return status, fmt.Errorf("failed to unmarshal status file '%s': %w", path, err)
+	}
+	return status, nil
+}
+
+// WriteStoryStatusFile writes the story generation status to a YAML file.
+func WriteStoryStatusFile(path string, status StoryStatus) error {
+	data, err := yaml.Marshal(status)
+	if err != nil {
+		return fmt.Errorf("failed to marshal status data: %w", err)
+	}
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		return fmt.Errorf("failed to write status file '%s': %w", path, err)
 	}
 	return nil
 }
