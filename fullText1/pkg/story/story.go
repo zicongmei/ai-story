@@ -340,7 +340,7 @@ Write Chapter %d now, ensuring it flows logically from previous chapters and adh
 		for attempt := 0; attempt <= maxChapterRetries; attempt++ {
 			if attempt > 0 {
 				log.Printf("Retrying Chapter %d (attempt %d/%d) after previous failure: %v", chapterNum, attempt, maxChapterRetries, chapterGenerationErr)
-				time.Sleep(2 * time.Second) // Small delay before retrying
+				time.Sleep(20 * time.Second) // Small delay before retrying
 			}
 
 			apiInput := aiEndpoint.CallGeminiAPIInput{
