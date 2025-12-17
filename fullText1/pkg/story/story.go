@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8" // Added for character counting
 
 	"github.com/zicongmei/ai-story/fullText1/pkg/abstract/file"
 	"github.com/zicongmei/ai-story/fullText1/pkg/aiEndpoint"
@@ -379,6 +380,7 @@ Write Chapter %d now, ensuring it flows logically from previous chapters and adh
 
 		chapterContentToWrite := strings.TrimSpace(chapterText) + "\n\n"
 		wordCount := len(strings.Fields(strings.ReplaceAll(chapterContentToWrite, "\n", " ")))
+		characterCount := utf8.RuneCountInString(chapterContentToWrite) // Count characters
 		chapterHeader := fmt.Sprintf("## Chapter %d\n\n", chapterNum)
 
 		// Update State
@@ -389,8 +391,8 @@ Write Chapter %d now, ensuring it flows logically from previous chapters and adh
 		state.LastThoughtSignature = chapterSignature
 		state.ChaptersAlreadyWritten = chapterNum
 
-		log.Printf("Chapter %d tokens: English words %d, Input %d, Output %d, Cost: $%.6f. Accumulated tokens: Input %d, Output %d, Accumulated Cost: $%.6f",
-			chapterNum, wordCount, chapterInputTokens, chapterOutputTokens, chapterCost, state.AccumulatedInputTokens, state.AccumulatedOutputTokens, state.AccumulatedCost)
+		log.Printf("Chapter %d details: Words %d, Characters %d, Input Tokens %d, Output Tokens %d, Cost: $%.6f. Accumulated: Input Tokens %d, Output Tokens %d, Cost: $%.6f",
+			chapterNum, wordCount, characterCount, chapterInputTokens, chapterOutputTokens, chapterCost, state.AccumulatedInputTokens, state.AccumulatedOutputTokens, state.AccumulatedCost)
 
 		// Save Status and Rewrite Full Text File
 		if err := saveStateToFiles(state, statusFilePath, outputFilePath); err != nil {

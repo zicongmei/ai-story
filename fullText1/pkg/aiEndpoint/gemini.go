@@ -12,7 +12,7 @@ import (
 	"google.golang.org/genai"
 )
 
-const DefaultGeminiModel = "gemini-2.5-flash"
+const DefaultGeminiModel = "gemini-3-flash-preview"
 
 // Pricing constants per 1 million tokens
 const (
@@ -31,6 +31,10 @@ const (
 	// Gemini 3 Pro Preview (prompts > 200k tokens)
 	Gemini3ProPreviewInputPriceHighTierPerMillion  float64 = 4.00
 	Gemini3ProPreviewOutputPriceHighTierPerMillion float64 = 18.00
+
+	// Gemini 3 Flash Preview
+	Gemini3FlashPreviewInputPricePerMillion  float64 = 0.50
+	Gemini3FlashPreviewOutputPricePerMillion float64 = 3.00
 
 	Gemini25ProPromptTokenThreshold = 200000
 
@@ -86,6 +90,11 @@ func GetModelPrices(modelName string, inputTokens int) (*ModelPrices, error) {
 				OutputPricePerMillion: Gemini3ProPreviewOutputPriceHighTierPerMillion,
 			}, nil
 		}
+	case "gemini-3-flash-preview":
+		return &ModelPrices{
+			InputPricePerMillion:  Gemini3FlashPreviewInputPricePerMillion,
+			OutputPricePerMillion: Gemini3FlashPreviewOutputPricePerMillion,
+		}, nil
 	case "gemini-2.5-flash":
 		return &ModelPrices{
 			InputPricePerMillion:  Gemini25FlashInputPricePerMillion,
@@ -268,7 +277,7 @@ func CallGeminiAPI(input CallGeminiAPIInput) GeminiAPIResponse { // Updated sign
 
 	var genConfig *genai.GenerateContentConfig
 
-	if input.ModelName == "gemini-3-pro-preview" && input.ThinkingLevel != "" {
+	if (input.ModelName == "gemini-3-pro-preview" || input.ModelName == "gemini-3-flash-preview") && input.ThinkingLevel != "" {
 		// If thinking level is set for the supported model, use it and do NOT set thinking budget.
 		genConfig = &genai.GenerateContentConfig{
 			ThinkingConfig: &genai.ThinkingConfig{

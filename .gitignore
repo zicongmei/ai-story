@@ -38,3 +38,4 @@ abstract-*.yaml
 fulltext-*.txt
 status-*.yaml
 log-*.log
+fullText1/output/
