@@ -7,6 +7,7 @@ import (
 	"log"
 	"math/rand"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -215,7 +216,13 @@ func Execute(args []string) error {
 	finalOutputPath := *outputPath
 	if finalOutputPath == "" {
 		timestamp := time.Now().Format("2006-01-02-15-04-05")
-		finalOutputPath = fmt.Sprintf("abstract-%s.yaml", timestamp) // Changed to .yaml
+		finalOutputPath = filepath.Join("output", fmt.Sprintf("abstract-%s.yaml", timestamp))
+	}
+
+	// Ensure output directory exists
+	outputDir := filepath.Dir(finalOutputPath)
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		return fmt.Errorf("failed to create output directory '%s': %w", outputDir, err)
 	}
 
 	// --- Save Abstract and Thought Signature to YAML File ---

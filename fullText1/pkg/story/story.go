@@ -128,6 +128,12 @@ func setupLogging(abstractFilePath string) (*os.File, error) {
 	originalLogOutput := log.Writer()
 	originalLogFlags := log.Flags()
 
+	// Ensure output directory exists
+	outputDir := "output"
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create output directory '%s': %w", outputDir, err)
+	}
+
 	abstractFileName := filepath.Base(abstractFilePath)
 	logFileName := ""
 	if strings.HasPrefix(strings.ToLower(abstractFileName), "abstract-") && (strings.HasSuffix(strings.ToLower(abstractFileName), ".txt") || strings.HasSuffix(strings.ToLower(abstractFileName), ".json") || strings.HasSuffix(strings.ToLower(abstractFileName), ".yaml") || strings.HasSuffix(strings.ToLower(abstractFileName), ".yml")) {
@@ -140,10 +146,12 @@ func setupLogging(abstractFilePath string) (*os.File, error) {
 		timestamp := time.Now().Format("2006-01-02-15-04-05")
 		logFileName = fmt.Sprintf("story-log-%s.log", timestamp)
 	}
+	
+	logFilePath := filepath.Join(outputDir, logFileName)
 
-	logFile, err := os.OpenFile(logFileName, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	logFile, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
-		log.Printf("Warning: Failed to open log file '%s': %v. Logging will continue to stderr.", logFileName, err)
+		log.Printf("Warning: Failed to open log file '%s': %v. Logging will continue to stderr.", logFilePath, err)
 		log.SetOutput(originalLogOutput) // Ensure logging goes to original output if file fails
 		log.SetFlags(originalLogFlags)
 		return nil, fmt.Errorf("failed to open log file: %w", err)
@@ -151,7 +159,7 @@ func setupLogging(abstractFilePath string) (*os.File, error) {
 
 	mw := io.MultiWriter(os.Stderr, logFile)
 	log.SetOutput(mw)
-	log.Printf("Logging to file: %s", logFileName)
+	log.Printf("Logging to file: %s", logFilePath)
 	return logFile, nil
 }
 
@@ -200,6 +208,13 @@ func determineOutputFilePath(abstractFilePath, outputPathFlag string) string {
 		return outputPathFlag
 	}
 
+	outputDir := "output"
+	// Note: Directory creation is handled in setupLogging/Execute or main flow, but good to be safe if called independently.
+	// In this flow, we assume the directory might exist or will be created when writing. 
+	// Actually, initializeStoryState writes to status file, and saveStateToFiles writes to output file.
+	// We should probably ensure directory exists here or before writing.
+	// Since setupLogging ensures it, we are likely fine for this execution flow.
+
 	re := strings.NewReplacer("abstract-", "fulltext-")
 	baseName := filepath.Base(abstractFilePath)
 	if strings.HasPrefix(strings.ToLower(baseName), "abstract-") {
@@ -207,11 +222,11 @@ func determineOutputFilePath(abstractFilePath, outputPathFlag string) string {
 		finalOutputPath = strings.Replace(finalOutputPath, ".json", ".txt", 1)
 		finalOutputPath = strings.Replace(finalOutputPath, ".yaml", ".txt", 1)
 		finalOutputPath = strings.Replace(finalOutputPath, ".yml", ".txt", 1)
-		return finalOutputPath
+		return filepath.Join(outputDir, finalOutputPath)
 	}
 
 	timestamp := time.Now().Format("2006-01-02-15-04-05")
-	return fmt.Sprintf("fulltext-%s.txt", timestamp)
+	return filepath.Join(outputDir, fmt.Sprintf("fulltext-%s.txt", timestamp))
 }
 
 // determineStatusFilePath calculates the status file path based on the output file path.
